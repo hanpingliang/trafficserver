@@ -4382,6 +4382,9 @@ HttpSM::do_range_parse(MIMEField *range_field)
 void
 HttpSM::do_range_setup_if_necessary()
 {
+# if 1
+  t_state.range_setup = HttpTransact::RANGE_NONE;
+# else
   MIMEField *field;
   INKVConnInternal *range_trans;
   int field_content_type_len = -1;
@@ -4424,6 +4427,7 @@ HttpSM::do_range_setup_if_necessary()
       }
     }
   }
+# endif
 }
 
 
