@@ -71,7 +71,7 @@ CacheVC::updateVector(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED */)
     if (f.update) {
       // all Update cases. Need to get the alternate index.
       alternate_index = get_alternate_index(write_vector, update_key);
-      Debug("cache_update", "updating alternate index %d frags %d", alternate_index, alternate_index >=0 ? write_vector->get(alternate_index)->get_frag_offset_count() : -1);
+      Debug("cache_update", "updating alternate index %d frags %d", alternate_index, alternate_index >=0 ? write_vector->get(alternate_index)->get_frag_count() : -1);
       // if its an alternate delete
       if (!vec) {
         ink_assert(!total_len);
@@ -1230,7 +1230,7 @@ CacheVC::openWriteCloseDataDone(int event, Event *e)
       // Store the offset only if there is a table.
       // Currently there is no alt (and thence no table) for non-HTTP.
       if (alternate.valid())
-        alternate.push_frag_offset(write_pos);
+        alternate.mark_frag_write(fragment, write_pos, key);
 #endif
     }
     fragment++;

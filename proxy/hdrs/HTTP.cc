@@ -2032,6 +2032,7 @@ HTTPInfo::unmarshal(char *buf, int len, RefCountObj *block_ref)
     alt->m_request_hdr.m_http = hh;
     alt->m_request_hdr.m_mime = hh->m_fields_impl;
     alt->m_request_hdr.m_url_cached.m_heap = heap;
+    alt->m_request_hdr.mark_target_dirty();
   }
 
   heap = (HdrHeap *) (alt->m_response_hdr.m_heap ? (buf + (intptr_t) alt->m_response_hdr.m_heap) : 0);
@@ -2046,6 +2047,7 @@ HTTPInfo::unmarshal(char *buf, int len, RefCountObj *block_ref)
     alt->m_response_hdr.m_heap = heap;
     alt->m_response_hdr.m_http = hh;
     alt->m_response_hdr.m_mime = hh->m_fields_impl;
+    alt->m_response_hdr.mark_target_dirty();
   }
 
   alt->m_unmarshal_len = orig_len - len;
@@ -2157,9 +2159,11 @@ HTTPInfo::get_handle(char *buf, int len)
 }
 
 void
-HTTPInfo::push_frag_offset(FragOffset offset) {
+HTTPInfo::mark_frag_write(int idx, CryptoHash const& key, uint64_t offset) {
   ink_assert(m_alt);
-  if (0 == m_alt->m_frag_offsets) {
+  ink_assert(idx > 0);
+
+  if (0 == m_alt->m_fragments) {
     m_alt->m_frag_offsets = m_alt->m_integral_frag_offsets;
   } else if (m_alt->m_frag_offset_count >= HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS && 0 == (m_alt->m_frag_offset_count & (m_alt->m_frag_offset_count-1))) {
     // need more space than in integral storage and we're at an upgrade
@@ -2309,62 +2313,6 @@ HTTPRangeSpec::apply(uint64_t len)
   }
   return this->isValid();
 }
-
-# if 0
-bool
-HTTPRangeSpec::apply(self const& that, uint64_t len)
-{
-  _state = that._state;
-  if (INVALID == _state || EMPTY == _state || UNSATISFIABLE == _state) {
-    // nothing - simplifying later logic.
-  } else if (0 == len) {
-    /* Must special case zero length content
-       - suffix ranges are OK but other ranges are not.
-       - Best option is to return a 200 (not 206 or 416) for all suffix range spec on zero length content.
-         (this is what Apache HTTPD does)
-       - So, mark result as either @c UNSATISFIABLE or @c EMPTY, don't bother copying any ranges.
-    */
-    _state = EMPTY;
-    if (!that._single.isSuffix()) _state = UNSATISFIABLE;
-    for ( RangeBox::const_iterator spot = that._ranges.begin(), limit = that._ranges.end() ; spot != limit && EMPTY == _state ; ++spot ) {
-      if (!spot->isSuffix()) _state = UNSATISFIABLE;
-    }
-  } else if (that.isSingle()) {
-    _single = that._single;
-    if (!_single.apply(len)) _state = UNSATISFIABLE;
-  } else { // gotta be MULTI
-    _ranges.reserve(that._ranges.size());
-    for ( RangeBox::const_iterator spot = that._ranges.begin(), limit = that._ranges.end() ; spot != limit ; ++spot ) {
-      Range r(*spot);
-      if (r.apply(len)) _ranges.push_back(r);
-    }
-    if (_ranges.size() > 0) {
-      _single = _ranges[0];
-      if (_ranges.size() == 1) _state = SINGLE;
-    } else {
-      _state = UNSATISFIABLE;
-    }
-  }
-  return this->isValid();
-}
-
-HTTPRangeSpec&
-HTTPHdr::getRangeSpec()
-{
-  if (!m_range_parsed && HTTP_TYPE_REQUEST == m_http->m_polarity) {
-    MIMEField* f = this->field_find(MIME_FIELD_RANGE, MIME_LEN_RANGE);
-    if (f) {
-      int len;
-      char const* value = f->value_get(&len);
-      if (value) {
-        m_range_spec.parse(value,len);
-      }
-    }
-  }
-  m_range_parsed = true;
-  return m_range_spec;
-}
-# endif
 
 namespace {
 

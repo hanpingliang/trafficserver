@@ -80,6 +80,11 @@ namespace ats {
     char *toHexStr(char buffer[33]) {
       return ink_code_to_hex_str(buffer, u8);
     }
+
+    /// Check for the zero key.
+    bool is_zero() const {
+      return 0 == (u64[0] | u64[1]);
+    }
   };
 
   extern CryptoHash const CRYPTO_HASH_ZERO;

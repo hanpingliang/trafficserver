@@ -297,7 +297,7 @@ CacheVC::CacheVC():alternate_index(CACHE_ALT_INDEX_DEFAULT)
 }
 
 #ifdef HTTP_CACHE
-HTTPInfo::FragOffset*
+HTTPInfo::FragmentDescriptor*
 CacheVC::get_frag_table()
 {
   ink_assert(alternate.valid());
@@ -2380,7 +2380,7 @@ static void unmarshal_helper(Doc *doc, Ptr<IOBufferData> &buf, int &okay) {
     @internal I looked at doing this in place (rather than a copy & modify) but
     - The in place logic would be even worse than this mess
     - It wouldn't save you that much, since you end up doing inserts early in the buffer.
-      Without extreme care in the logic it could end up doing more copying thatn
+      Without extreme care in the logic it could end up doing more copying than
       the simpler copy & modify.
 
     @internal This logic presumes the existence of some slack at the end of the buffer, which
@@ -2397,6 +2397,7 @@ static bool upgrade_doc_version(Ptr<IOBufferData>& buf) {
     if (0 == doc->hlen) {
       Debug("cache_bc", "Doc %p without header, no upgrade needed.", doc);
     } else if (CACHE_FRAG_TYPE_HTTP_V23 == doc->doc_type) {
+      typedef cache_bc::HTTPCacheFragmentTable::FragOffset FragOffset;
       cache_bc::HTTPCacheAlt_v21* alt = reinterpret_cast<cache_bc::HTTPCacheAlt_v21*>(doc->hdr());
       if (alt && alt->is_unmarshalled_format()) {
         Ptr<IOBufferData> d_buf(ioDataAllocator.alloc());
@@ -2404,8 +2405,8 @@ static bool upgrade_doc_version(Ptr<IOBufferData>& buf) {
         char* src;
         char* dst;
         char* hdr_limit = doc->data();
-        HTTPInfo::FragOffset* frags = reinterpret_cast<HTTPInfo::FragOffset*>(static_cast<char*>(buf->data()) + cache_bc::sizeofDoc_v23);
-        int frag_count = doc->_flen / sizeof(HTTPInfo::FragOffset);
+        FragOffset* frags = reinterpret_cast<FragOffset*>(static_cast<char*>(buf->data()) + cache_bc::sizeofDoc_v23);
+        int frag_count = doc->_flen / sizeof(FragOffset);
         size_t n = 0;
         size_t content_size = doc->data_len();
 

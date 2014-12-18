@@ -236,6 +236,8 @@ extern int good_interim_disks;
 // CacheVC
 struct CacheVC: public CacheVConnection
 {
+  typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
+
   CacheVC();
 
   VIO *do_io_read(Continuation *c, int64_t nbytes, MIOBuffer *buf);
@@ -361,17 +363,16 @@ struct CacheVC: public CacheVConnection
       @return The address of the start of the fragment table,
       or @c NULL if there is no fragment table.
   */
-  virtual HTTPInfo::FragOffset* get_frag_table();
+  virtual HTTPInfo::FragmentDescriptor* get_frag_table();
   /** Load alt pointers and do fixups if needed.
       @return Length of header data used for alternates.
    */
   virtual uint32_t load_http_info(CacheHTTPInfoVector* info, struct Doc* doc, RefCountObj * block_ptr = NULL);
 
-  /// Change member @a key to be the key for the @a target 'th fragment.
-  void update_key_to_frag_idx(int target);
-  /// Compute the index of the fragment that contains the byte at content @a offset.
-  /// The table of @a frags and its @a count must be provided.
-  int frag_idx_for_offset(HTTPInfo::FragOffset* frags, int count, uint64_t offset);
+  /// Change member @a key to be the key for the @a idx 'th fragment.
+  void update_key_to_frag_idx(int idx);
+  /// Compute the index of the fragment that contains the byte at content location @a offset.
+  int frag_idx_for_offset(uint64_t offset);
 
   virtual char const* get_http_range_boundary_string(int* len) const;
   virtual uint64_t get_http_content_size();

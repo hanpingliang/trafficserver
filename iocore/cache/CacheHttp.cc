@@ -201,32 +201,6 @@ CacheHTTPInfoVector::marshal(char *buf, int length)
   return buf - start;
 }
 
-int
-CacheHTTPInfoVector::unmarshal(const char *buf, int length, RefCountObj * block_ptr)
-{
-  ink_assert(!(((intptr_t) buf) & 3));      // buf must be aligned
-
-  const char *start = buf;
-  CacheHTTPInfo info;
-  xcount = 0;
-
-  while (length - (buf - start) > (int) sizeof(HTTPCacheAlt)) {
-
-    int tmp = HTTPInfo::unmarshal((char *) buf, length - (buf - start), block_ptr);
-    if (tmp < 0) {
-      return -1;
-    }
-    info.m_alt = (HTTPCacheAlt *) buf;
-    buf += tmp;
-
-    data(xcount).alternate = info;
-    xcount++;
-  }
-
-  return ((caddr_t) buf - (caddr_t) start);
-}
-
-
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
 uint32_t

@@ -27,7 +27,7 @@
 #include <assert.h>
 #include <vector>
 #include "Arena.h"
-#include "INK_MD5.h"
+#include "CryptoHash.h"
 #include "MIME.h"
 #include "URL.h"
 
@@ -1528,29 +1528,63 @@ enum
   CACHE_ALT_MAGIC_DEAD = 0xdeadeed
 };
 
-// struct HTTPCacheAlt
+/// Header for an alternate of an object.
+/// @note THIS IS DIRECTLY SERIALIZED TO DISK
+/// (after some tweaks, but any member in this struct will be written to disk)
 struct HTTPCacheAlt
 {
+  /// Information about a fragment in this alternate.
+  /// @internal Currently @c Dir has only 40 bits for the disk offset of a fragment,
+  /// and since no object (or alternate) is split across stripes (and thence disks)
+  /// no fragment can have an internal offset more than 40 bits long, so 48 bits
+  /// should suffice here.
+  struct FragmentDescriptor
+  {
+    CryptoHash m_key; ///< Key for fragment.
+    uint64_t m_offset:48; ///< Starting offset of fragment in object.
+    unsigned int m_cached_p:1; ///< Presence bit (is fragment in cache?)
+    unsigned int m_zero:15; ///< Zero fill for future use.
+  };
+
   HTTPCacheAlt();
+
   void copy(HTTPCacheAlt *to_copy);
   void copy_frag_offsets_from(HTTPCacheAlt* src);
   void destroy();
 
   uint32_t m_magic;
 
-  // Writeable is set to true is we reside
-  //  in a buffer owned by this structure.
-  // INVARIANT: if own the buffer this HttpCacheAlt
-  //   we also own the buffers for the request &
-  //   response headers
-  int32_t m_writeable;
+  union {
+    uint32_t m_raw_flags;
+    struct {
+      /** Do we own our own buffer?
+	  @c true if the buffer containing this data is owned by this object.
+	  INVARIANT: if we own this buffer then we also own the buffers for
+	  @a m_request_hdr and @a m_response_hdr.
+      */
+      uint32_t writeable_p:1;
+      /// Was this alternate originally stored as a partial object?
+      uint32_t partial_p:1;
+      /// Are all fragments in cache?
+      uint32_t present_p:1;
+    } m_flag;
+  };
+
   int32_t m_unmarshal_len;
 
   int32_t m_id;
   int32_t m_rid;
 
-  int32_t m_object_key[4];
-  int32_t m_object_size[2];
+  /** The target size for fragments in this alternate.
+      This is @b mandatory if the object is being partially cached.
+      During read it should be used as a guideline but not considered definitive.
+  */
+  uint32_t m_fixed_fragment_size;
+
+  /// # of fragments in the alternate, including the earliest fragment.
+  /// This can be zero for a resident alternate.
+  uint32_t m_frag_count;
+
 
   HTTPHdr m_request_hdr;
   HTTPHdr m_response_hdr;
@@ -1558,21 +1592,23 @@ struct HTTPCacheAlt
   time_t m_request_sent_time;
   time_t m_response_received_time;
 
-  /// # of fragment offsets in this alternate.
-  /// @note This is one less than the number of fragments.
-  int m_frag_offset_count;
-  /// Type of offset for a fragment.
-  typedef uint64_t FragOffset;
-  /// Table of fragment offsets.
-  /// @note The offsets are forward looking so that frag[0] is the
-  /// first byte past the end of fragment 0 which is also the first
-  /// byte of fragment 1. For this reason there is no fragment offset
-  /// for the last fragment.
-  FragOffset *m_frag_offsets;
-  /// # of fragment offsets built in to object.
-  static int const N_INTEGRAL_FRAG_OFFSETS = 4;
-  /// Integral fragment offset table.
-  FragOffset m_integral_frag_offsets[N_INTEGRAL_FRAG_OFFSETS];
+  /** Special case the first (earliest, non-resident) fragment.
+      This holds the key for the earliest fragment and the object size
+      by overloading the offset in this specific instance.
+  */
+  FragmentDescriptor m_earliest;
+
+  /** Descriptors for the rest of the fragments.
+      Because of this, index 0 in this array is really the next fragment after the
+      earliest fragment. We should have the invariant
+      ( @a m_fragments != 0) == ( @a m_frag_count > 1 )
+
+      @internal I thought of using @c std::vector here, but then we end up with either
+      doing 2 allocations (one for the @c std::vector and another for its contents) or
+      writing the @c std::vector container to disk (because this struct is directly
+      serialized). Instead we do our own memory management, which doesn't make me happy either.
+  */
+  FragmentDescriptor *m_fragments;
 
   // With clustering, our alt may be in cluster
   //  incoming channel buffer, when we are
@@ -1587,7 +1623,7 @@ struct HTTPCacheAlt
 class HTTPInfo
 {
 public:
-  typedef HTTPCacheAlt::FragOffset FragOffset; ///< Import type.
+  typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
 
   HTTPCacheAlt *m_alt;
 
@@ -1623,9 +1659,9 @@ public:
   void id_set(int32_t id) { m_alt->m_id = id; }
   void rid_set(int32_t id) { m_alt->m_rid = id; }
 
-  INK_MD5 object_key_get();
-  void object_key_get(INK_MD5 *);
-  bool compare_object_key(const INK_MD5 *);
+  CryptoHash object_key_get();
+  void object_key_get(CryptoHash *);
+  bool compare_object_key(const CryptoHash *);
   int64_t object_size_get();
 
   void request_get(HTTPHdr *hdr) { hdr->copy_shallow(&m_alt->m_request_hdr); }
@@ -1639,7 +1675,7 @@ public:
   time_t request_sent_time_get() { return m_alt->m_request_sent_time; }
   time_t response_received_time_get() { return m_alt->m_response_received_time; }
 
-  void object_key_set(INK_MD5 & md5);
+  void object_key_set(CryptoHash const& md5);
   void object_size_set(int64_t size);
 
   void request_set(const HTTPHdr *req) { m_alt->m_request_hdr.copy(req); }
@@ -1649,13 +1685,20 @@ public:
   void response_received_time_set(time_t t) { m_alt->m_response_received_time = t; }
 
   /// Get the fragment table.
-  FragOffset* get_frag_table();
-  /// Get the # of fragment offsets
-  /// @note This is the size of the fragment offset table, and one less
-  /// than the actual # of fragments.
-  int get_frag_offset_count();
-  /// Add an @a offset to the end of the fragment offset table.
-  void push_frag_offset(FragOffset offset);
+  /// @note There is a fragment table only for multi-fragment alternates @b and
+  /// the indexing starts with the second (non-earliest) fragment.
+  FragmentDescriptor* get_frag_table();
+  /// Get the number of fragments.
+  /// 0 means resident alternate, 1 means single fragment, 2 means multi-fragment.
+  int get_frag_count() const;
+  /// Get the target fragment size.
+  uint32_t get_frag_fixed_size() const;
+  /// Mark a fragment as having been written to this alternate.
+  void mark_frag_write(
+		       int idx, ///< The fragment index (0 -> earliest)
+		       CryptoHash const& key, ///< fragment cache key
+		       uint64_t offset ///< offset of  first byte of fragment in the alternate content.
+		       );
 
   // Sanity check functions
   static bool check_marshalled(char *buf, int len);
@@ -1668,7 +1711,7 @@ inline void
 HTTPInfo::destroy()
 {
   if (m_alt) {
-    if (m_alt->m_writeable) {
+    if (m_alt->m_flag.writeable_p) {
       m_alt->destroy();
     } else if (m_alt->m_ext_buffer) {
       if (m_alt->m_ext_buffer->refcount_dec() == 0) {
@@ -1686,79 +1729,58 @@ HTTPInfo::operator =(const HTTPInfo & m)
   return *this;
 }
 
-inline INK_MD5
+inline CryptoHash
 HTTPInfo::object_key_get()
 {
-  INK_MD5 val;
-  int32_t* pi = reinterpret_cast<int32_t*>(&val);
-
-  pi[0] = m_alt->m_object_key[0];
-  pi[1] = m_alt->m_object_key[1];
-  pi[2] = m_alt->m_object_key[2];
-  pi[3] = m_alt->m_object_key[3];
-
-  return val;
+  return m_alt->m_earliest.m_key;
 }
 
 inline void
-HTTPInfo::object_key_get(INK_MD5 *md5)
+HTTPInfo::object_key_get(CryptoHash *key)
 {
-  int32_t* pi = reinterpret_cast<int32_t*>(md5);
-  pi[0] = m_alt->m_object_key[0];
-  pi[1] = m_alt->m_object_key[1];
-  pi[2] = m_alt->m_object_key[2];
-  pi[3] = m_alt->m_object_key[3];
+  memcpy(key, &(m_alt->m_earliest.m_key), sizeof(*key));
 }
 
 inline bool
-HTTPInfo::compare_object_key(const INK_MD5 *md5)
+HTTPInfo::compare_object_key(const CryptoHash *key)
 {
-  int32_t const* pi = reinterpret_cast<int32_t const*>(md5);
-  return ((m_alt->m_object_key[0] == pi[0]) &&
-          (m_alt->m_object_key[1] == pi[1]) &&
-          (m_alt->m_object_key[2] == pi[2]) &&
-          (m_alt->m_object_key[3] == pi[3])
-         );
+  return *key == m_alt->m_earliest.m_key;
 }
 
 inline int64_t
 HTTPInfo::object_size_get()
 {
-  int64_t val;
-  int32_t* pi = reinterpret_cast<int32_t*>(&val);
-
-  pi[0] = m_alt->m_object_size[0];
-  pi[1] = m_alt->m_object_size[1];
-  return val;
+  return m_alt->m_earliest.m_offset;
 }
 
 inline void
-HTTPInfo::object_key_set(INK_MD5 & md5)
+HTTPInfo::object_key_set(CryptoHash const& md5)
 {
-  int32_t* pi = reinterpret_cast<int32_t*>(&md5);
-  m_alt->m_object_key[0] = pi[0];
-  m_alt->m_object_key[1] = pi[1];
-  m_alt->m_object_key[2] = pi[2];
-  m_alt->m_object_key[3] = pi[3];
+  m_alt->m_earliest.m_key = md5;
 }
 
 inline void
 HTTPInfo::object_size_set(int64_t size)
 {
-  int32_t* pi = reinterpret_cast<int32_t*>(&size);
-  m_alt->m_object_size[0] = pi[0];
-  m_alt->m_object_size[1] = pi[1];
+  m_alt->m_earliest.m_offset = size;
 }
 
-inline HTTPInfo::FragOffset*
+inline HTTPInfo::FragmentDescriptor*
 HTTPInfo::get_frag_table()
 {
-  return m_alt ? m_alt->m_frag_offsets : 0;
+  return m_alt ? m_alt->m_fragments : 0;
 }
 
 inline int
-HTTPInfo::get_frag_offset_count() {
-  return m_alt ? m_alt->m_frag_offset_count : 0;
+HTTPInfo::get_frag_count() const
+{
+  return m_alt ? m_alt->m_frag_count : 0;
+}
+
+inline uint32_t
+HTTPInfo::get_frag_fixed_size() const
+{
+  return m_alt ? m_alt->m_fixed_fragment_size : 0;
 }
 
 inline
