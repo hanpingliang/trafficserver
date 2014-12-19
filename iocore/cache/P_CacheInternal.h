@@ -237,6 +237,7 @@ extern int good_interim_disks;
 struct CacheVC: public CacheVConnection
 {
   typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
+  typedef HTTPCacheAlt::FragmentDescriptorTable FragmentDescriptorTable; ///< Import type.
 
   CacheVC();
 
@@ -363,7 +364,7 @@ struct CacheVC: public CacheVConnection
       @return The address of the start of the fragment table,
       or @c NULL if there is no fragment table.
   */
-  virtual HTTPInfo::FragmentDescriptor* get_frag_table();
+  virtual HTTPInfo::FragmentDescriptorTable* get_frag_table();
   /** Load alt pointers and do fixups if needed.
       @return Length of header data used for alternates.
    */

@@ -102,7 +102,8 @@ CacheVC::updateVector(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED */)
          data should remain valid.
       */
       if (alternate_index >= 0)
-        alternate.copy_frag_offsets_from(write_vector->get(alternate_index));
+//        alternate.copy_frag_offsets_from(write_vector->get(alternate_index));
+        ink_release_assert(! "You need to deal with fragment table copying!");
       alternate_index = write_vector->insert(&alternate, alternate_index);
     }
 
@@ -1230,7 +1231,7 @@ CacheVC::openWriteCloseDataDone(int event, Event *e)
       // Store the offset only if there is a table.
       // Currently there is no alt (and thence no table) for non-HTTP.
       if (alternate.valid())
-        alternate.mark_frag_write(fragment, write_pos, key);
+        alternate.mark_frag_write(fragment, key, write_pos);
 #endif
     }
     fragment++;
@@ -1327,7 +1328,7 @@ CacheVC::openWriteWriteDone(int event, Event *e)
       // Store the offset only if there is a table.
       // Currently there is no alt (and thence no table) for non-HTTP.
       if (alternate.valid())
-        alternate.push_frag_offset(write_pos);
+        alternate.mark_frag_write(fragment, key, write_pos);
 #endif
     }
     ++fragment;

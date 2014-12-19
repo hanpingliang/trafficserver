@@ -1768,86 +1768,65 @@ ClassAllocator<HTTPCacheAlt> httpCacheAltAllocator("httpCacheAltAllocator");
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
 HTTPCacheAlt::HTTPCacheAlt():
-m_magic(CACHE_ALT_MAGIC_ALIVE), m_writeable(1),
-m_unmarshal_len(-1),
-m_id(-1), m_rid(-1), m_request_hdr(),
-m_response_hdr(), m_request_sent_time(0), m_response_received_time(0),
-m_frag_offset_count(0), m_frag_offsets(0),
-m_ext_buffer(NULL)
+  m_magic(CACHE_ALT_MAGIC_ALIVE)
+  , m_unmarshal_len(-1)
+  , m_id(-1), m_rid(-1)
+  , m_frag_count(0)
+  , m_request_hdr(), m_response_hdr()
+  , m_request_sent_time(0), m_response_received_time(0)
+  , m_fragments(0)
+  , m_ext_buffer(NULL)
 {
-
-  m_object_key[0] = 0;
-  m_object_key[1] = 0;
-  m_object_key[2] = 0;
-  m_object_key[3] = 0;
-  m_object_size[0] = 0;
-  m_object_size[1] = 0;
+  m_flags = 0; // set all flags to false.
+  m_flag.writeable_p = true;
 }
 
 void
 HTTPCacheAlt::destroy()
 {
   ink_assert(m_magic == CACHE_ALT_MAGIC_ALIVE);
-  ink_assert(m_writeable);
+  ink_assert(m_flag.writeable_p);
   m_magic = CACHE_ALT_MAGIC_DEAD;
-  m_writeable = 0;
+  m_flag.writeable_p = 0;
   m_request_hdr.destroy();
   m_response_hdr.destroy();
-  m_frag_offset_count = 0;
-  if (m_frag_offsets && m_frag_offsets != m_integral_frag_offsets) {
-    ats_free(m_frag_offsets);
-    m_frag_offsets = 0;
-  }
+  m_frag_count = 0;
+  if (m_flag.table_allocated_p) ats_free(m_fragments);
+  m_fragments = 0;
   httpCacheAltAllocator.free(this);
 }
 
 void
-HTTPCacheAlt::copy(HTTPCacheAlt *to_copy)
+HTTPCacheAlt::copy(HTTPCacheAlt *that)
 {
 
-  m_magic = to_copy->m_magic;
-  // m_writeable =      to_copy->m_writeable;
-  m_unmarshal_len = to_copy->m_unmarshal_len;
-  m_id = to_copy->m_id;
-  m_rid = to_copy->m_rid;
-  m_object_key[0] = to_copy->m_object_key[0];
-  m_object_key[1] = to_copy->m_object_key[1];
-  m_object_key[2] = to_copy->m_object_key[2];
-  m_object_key[3] = to_copy->m_object_key[3];
-  m_object_size[0] = to_copy->m_object_size[0];
-  m_object_size[1] = to_copy->m_object_size[1];
+  m_magic = that->m_magic;
+  m_unmarshal_len = that->m_unmarshal_len;
+  m_id = that->m_id;
+  m_rid = that->m_rid;
+  m_earliest = that->m_earliest;
 
-  if (to_copy->m_request_hdr.valid()) {
-    m_request_hdr.copy(&to_copy->m_request_hdr);
+  if (that->m_request_hdr.valid()) {
+    m_request_hdr.copy(&that->m_request_hdr);
   }
 
-  if (to_copy->m_response_hdr.valid()) {
-    m_response_hdr.copy(&to_copy->m_response_hdr);
+  if (that->m_response_hdr.valid()) {
+    m_response_hdr.copy(&that->m_response_hdr);
   }
 
-  m_request_sent_time = to_copy->m_request_sent_time;
-  m_response_received_time = to_copy->m_response_received_time;
-  this->copy_frag_offsets_from(to_copy);
-}
+  m_request_sent_time = that->m_request_sent_time;
+  m_response_received_time = that->m_response_received_time;
 
-void
-HTTPCacheAlt::copy_frag_offsets_from(HTTPCacheAlt *src)
-{
-  m_frag_offset_count = src->m_frag_offset_count;
-  if (m_frag_offset_count > 0) {
-    if (m_frag_offset_count > N_INTEGRAL_FRAG_OFFSETS) {
-      /* Mixed feelings about this - technically we don't need it to be a
-         power of two when copied because currently that means it is frozen.
-         But that could change later and it would be a nasty bug to find.
-         So we'll do it for now. The relative overhead is tiny.
-      */
-      int bcount = HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS * 2;
-      while (bcount < m_frag_offset_count) bcount *= 2;
-      m_frag_offsets = static_cast<FragOffset*>(ats_malloc(sizeof(FragOffset) * bcount));
-    } else {
-      m_frag_offsets = m_integral_frag_offsets;
-    }
-    memcpy(m_frag_offsets, src->m_frag_offsets, sizeof(FragOffset) * m_frag_offset_count);
+  m_frag_count = that->m_frag_count;
+
+  ats_free(m_fragments);
+  if (that->m_fragments) {
+    size_t size = FragmentDescriptorTable::calc_size(that->m_fragments->m_n);
+    m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
+    memcpy(m_fragments, that->m_fragments, size);
+    m_flag.table_allocated_p = true;
+  } else {
+    m_fragments = 0;
   }
 }
 
@@ -1863,20 +1842,13 @@ void
 HTTPInfo::copy(HTTPInfo *hi)
 {
 
-  if (m_alt && m_alt->m_writeable) {
+  if (m_alt && m_alt->m_flag.writeable_p) {
     destroy();
   }
 
   create();
   m_alt->copy(hi->m_alt);
 }
-
-void
-HTTPInfo::copy_frag_offsets_from(HTTPInfo* src) {
-  if (m_alt && src->m_alt)
-    m_alt->copy_frag_offsets_from(src->m_alt);
-}
-
 
 int
 HTTPInfo::marshal_length()
@@ -1891,10 +1863,7 @@ HTTPInfo::marshal_length()
     len += m_alt->m_response_hdr.m_heap->marshal_length();
   }
 
-  if (m_alt->m_frag_offset_count > HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS) {
-    len -= sizeof(m_alt->m_integral_frag_offsets);
-    len += sizeof(FragOffset) * m_alt->m_frag_offset_count;
-  }
+  len += FragmentDescriptorTable::calc_size(m_alt->m_frag_count);
 
   return len;
 }
@@ -1907,40 +1876,31 @@ HTTPInfo::marshal(char *buf, int len)
   HTTPCacheAlt *marshal_alt = (HTTPCacheAlt *) buf;
   // non-zero only if the offsets are external. Otherwise they get
   // marshalled along with the alt struct.
-  int frag_len = (0 == m_alt->m_frag_offset_count || m_alt->m_frag_offsets == m_alt->m_integral_frag_offsets) ? 0 : sizeof(HTTPCacheAlt::FragOffset) * m_alt->m_frag_offset_count;
+  size_t frag_len = FragmentDescriptorTable::calc_size(m_alt->m_frag_count);
 
   ink_assert(m_alt->m_magic == CACHE_ALT_MAGIC_ALIVE);
 
   // Make sure the buffer is aligned
 //    ink_assert(((intptr_t)buf) & 0x3 == 0);
 
-  // If we have external fragment offsets, copy the initial ones
-  // into the integral data.
-  if (frag_len) {
-    memcpy(m_alt->m_integral_frag_offsets, m_alt->m_frag_offsets, sizeof(m_alt->m_integral_frag_offsets));
-    frag_len -= sizeof(m_alt->m_integral_frag_offsets);
-    // frag_len should never be non-zero at this point, as the offsets
-    // should be external only if too big for the internal table.
-  }
   // Memcpy the whole object so that we can use it
   //   live later.  This involves copying a few
   //   extra bytes now but will save copying any
   //   bytes on the way out of the cache
   memcpy(buf, m_alt, sizeof(HTTPCacheAlt));
   marshal_alt->m_magic = CACHE_ALT_MAGIC_MARSHALED;
-  marshal_alt->m_writeable = 0;
+  marshal_alt->m_flag.writeable_p = 0;
   marshal_alt->m_unmarshal_len = -1;
   marshal_alt->m_ext_buffer = NULL;
   buf += HTTP_ALT_MARSHAL_SIZE;
   used += HTTP_ALT_MARSHAL_SIZE;
 
   if (frag_len > 0) {
-    marshal_alt->m_frag_offsets = static_cast<FragOffset*>(reinterpret_cast<void*>(used));
-    memcpy(buf, m_alt->m_frag_offsets + HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS, frag_len);
+    marshal_alt->m_fragments = static_cast<FragmentDescriptorTable*>(reinterpret_cast<void*>(used));
+    memcpy(buf, m_alt->m_fragments, frag_len);
+    (reinterpret_cast<FragmentDescriptorTable*>(buf))->m_n = m_alt->m_frag_count - 1;
     buf += frag_len;
     used += frag_len;
-  } else {
-    marshal_alt->m_frag_offsets = 0;
   }
 
   // The m_{request,response}_hdr->m_heap pointers are converted
@@ -1982,7 +1942,6 @@ HTTPInfo::unmarshal(char *buf, int len, RefCountObj *block_ref)
 
   if (alt->m_magic == CACHE_ALT_MAGIC_ALIVE) {
     // Already unmarshaled, must be a ram cache
-    //  it
     ink_assert(alt->m_unmarshal_len > 0);
     ink_assert(alt->m_unmarshal_len <= len);
     return alt->m_unmarshal_len;
@@ -1993,29 +1952,13 @@ HTTPInfo::unmarshal(char *buf, int len, RefCountObj *block_ref)
 
   ink_assert(alt->m_unmarshal_len < 0);
   alt->m_magic = CACHE_ALT_MAGIC_ALIVE;
-  ink_assert(alt->m_writeable == 0);
+  ink_assert(alt->m_flag.writeable_p == 0);
   len -= HTTP_ALT_MARSHAL_SIZE;
 
-  if (alt->m_frag_offset_count > HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS) {
-    // stuff that didn't fit in the integral slots.
-    int extra = sizeof(FragOffset) * alt->m_frag_offset_count - sizeof(alt->m_integral_frag_offsets);
-    char* extra_src = buf + reinterpret_cast<intptr_t>(alt->m_frag_offsets);
-    // Actual buffer size, which must be a power of two.
-    // Well, technically not, because we never modify an unmarshalled fragment
-    // offset table, but it would be a nasty bug should that be done in the
-    // future.
-    int bcount = HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS * 2;
-
-    while (bcount < alt->m_frag_offset_count) bcount *= 2;
-    alt->m_frag_offsets = static_cast<FragOffset*>(ats_malloc(bcount * sizeof(FragOffset))); // WRONG - must round up to next power of 2.
-    memcpy(alt->m_frag_offsets, alt->m_integral_frag_offsets, sizeof(alt->m_integral_frag_offsets));
-    memcpy(alt->m_frag_offsets + HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS, extra_src, extra);
-    len -= extra;
-  } else if (alt->m_frag_offset_count > 0) {
-    alt->m_frag_offsets = alt->m_integral_frag_offsets;
-  } else {
-    alt->m_frag_offsets = 0; // should really already be zero.
+  if (alt->m_fragments) {
+    alt->m_fragments = reinterpret_cast<FragmentDescriptorTable*>(buf + reinterpret_cast<intptr_t>(alt->m_fragments));
   }
+  alt->m_flag.table_allocated_p = false;
 
   HdrHeap *heap = (HdrHeap *) (alt->m_request_hdr.m_heap ? (buf + (intptr_t) alt->m_request_hdr.m_heap) : 0);
   HTTPHdrImpl *hh = NULL;
@@ -2068,7 +2011,7 @@ HTTPInfo::check_marshalled(char *buf, int len)
     return false;
   }
 
-  if (alt->m_writeable != false) {
+  if (alt->m_flag.writeable_p != false) {
     return false;
   }
 
@@ -2159,23 +2102,45 @@ HTTPInfo::get_handle(char *buf, int len)
 }
 
 void
-HTTPInfo::mark_frag_write(int idx, CryptoHash const& key, uint64_t offset) {
+HTTPInfo::mark_frag_write(uint32_t idx, CryptoHash const& key, uint64_t offset) {
+  FragmentDescriptor* frag;
+  FragmentDescriptorTable* old_table = 0;
+  uint32_t n = 0; // set if we need to allocate, this is max array index needed.
+
   ink_assert(m_alt);
   ink_assert(idx > 0);
 
   if (0 == m_alt->m_fragments) {
-    m_alt->m_frag_offsets = m_alt->m_integral_frag_offsets;
-  } else if (m_alt->m_frag_offset_count >= HTTPCacheAlt::N_INTEGRAL_FRAG_OFFSETS && 0 == (m_alt->m_frag_offset_count & (m_alt->m_frag_offset_count-1))) {
-    // need more space than in integral storage and we're at an upgrade
-    // size (power of 2).
-    FragOffset* nf = static_cast<FragOffset*>(ats_malloc(sizeof(FragOffset) * (m_alt->m_frag_offset_count * 2)));
-    memcpy(nf, m_alt->m_frag_offsets, sizeof(FragOffset) * m_alt->m_frag_offset_count);
-    if (m_alt->m_frag_offsets != m_alt->m_integral_frag_offsets)
-      ats_free(m_alt->m_frag_offsets);
-    m_alt->m_frag_offsets = nf;
+    uint32_t ff_size = this->get_frag_fixed_size();
+
+    n = (this->object_size_get() + ff_size - 1) / ff_size;
+    if (idx > n) n = idx;
+    ++n; // account for possible empty earliest.
+  } else if (idx > m_alt->m_fragments->m_n) {
+    n = idx + MAX(1, idx>>2); // grow by 25% but at least 1
+    old_table = m_alt->m_fragments;
   }
 
-  m_alt->m_frag_offsets[m_alt->m_frag_offset_count++] = offset;
+  // do allocation if needed.
+  if (n) {
+    size_t size = FragmentDescriptorTable::calc_size(n);
+    size_t old_size = 0;
+
+    m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
+    if (old_table) {
+      old_size = FragmentDescriptorTable::calc_size(old_table->m_n);
+      memcpy(m_alt->m_fragments, old_table, old_size);
+      ats_free(old_table);
+    }
+    memset(m_alt->m_fragments + old_size, 0, size - old_size);
+    m_alt->m_fragments->m_n = n;
+    m_alt->m_flag.table_allocated_p = true;
+  }
+
+  frag = &((*m_alt->m_fragments)[idx]);
+  frag->m_key = key;
+  frag->m_offset = offset;
+  frag->m_cached_p = true;
 }
 
 /***********************************************************************

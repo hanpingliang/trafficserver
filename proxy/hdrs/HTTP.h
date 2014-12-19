@@ -1529,6 +1529,7 @@ enum
 };
 
 /// Header for an alternate of an object.
+/// This is close to a POD, all the real API is in the @c HTTPInfo class.
 /// @note THIS IS DIRECTLY SERIALIZED TO DISK
 /// (after some tweaks, but any member in this struct will be written to disk)
 struct HTTPCacheAlt
@@ -1546,16 +1547,32 @@ struct HTTPCacheAlt
     unsigned int m_zero:15; ///< Zero fill for future use.
   };
 
+  /** Holds the table of fragment descriptors.
+
+      @internal To avoid allocating 2 chunks of memory we hang the descriptors off the end of this structure and provide
+      a method to do the calculations. The @a m_size contains the number of descriptors, the actual byte size must be
+      computed from that. The count of valid entries is held in this structure, not in the table, because it makes
+      serialization easier.  We don't serialize the explicit contents of the table struct (e.g., the capacity / @a
+      m_size value) only the descriptors.
+  */
+  struct FragmentDescriptorTable
+  {
+    uint32_t m_n; ///< The allocated number of entries in the table.
+    /// 1 based array operator.
+    FragmentDescriptor& operator [] (int idx);
+    /// Calculate the allocation size needed for a maximum array index of @a n.
+    static size_t calc_size(uint32_t n);
+  };
+
   HTTPCacheAlt();
 
   void copy(HTTPCacheAlt *to_copy);
-  void copy_frag_offsets_from(HTTPCacheAlt* src);
   void destroy();
 
   uint32_t m_magic;
 
   union {
-    uint32_t m_raw_flags;
+    uint32_t m_flags;
     struct {
       /** Do we own our own buffer?
 	  @c true if the buffer containing this data is owned by this object.
@@ -1567,6 +1584,8 @@ struct HTTPCacheAlt
       uint32_t partial_p:1;
       /// Are all fragments in cache?
       uint32_t present_p:1;
+      /// Is the fragment table independently allocated?
+      uint32_t table_allocated_p:1;
     } m_flag;
   };
 
@@ -1608,7 +1627,7 @@ struct HTTPCacheAlt
       writing the @c std::vector container to disk (because this struct is directly
       serialized). Instead we do our own memory management, which doesn't make me happy either.
   */
-  FragmentDescriptor *m_fragments;
+  FragmentDescriptorTable *m_fragments;
 
   // With clustering, our alt may be in cluster
   //  incoming channel buffer, when we are
@@ -1624,6 +1643,7 @@ class HTTPInfo
 {
 public:
   typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
+  typedef HTTPCacheAlt::FragmentDescriptorTable FragmentDescriptorTable; ///< Import type.
 
   HTTPCacheAlt *m_alt;
 
@@ -1644,7 +1664,6 @@ public:
 
   void copy(HTTPInfo *to_copy);
   void copy_shallow(HTTPInfo *info) { m_alt = info->m_alt; }
-  void copy_frag_offsets_from(HTTPInfo* src);
   HTTPInfo & operator =(const HTTPInfo & m);
 
   inkcoreapi int marshal_length();
@@ -1687,7 +1706,7 @@ public:
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
   /// the indexing starts with the second (non-earliest) fragment.
-  FragmentDescriptor* get_frag_table();
+  FragmentDescriptorTable* get_frag_table();
   /// Get the number of fragments.
   /// 0 means resident alternate, 1 means single fragment, 2 means multi-fragment.
   int get_frag_count() const;
@@ -1695,7 +1714,7 @@ public:
   uint32_t get_frag_fixed_size() const;
   /// Mark a fragment as having been written to this alternate.
   void mark_frag_write(
-		       int idx, ///< The fragment index (0 -> earliest)
+		       uint32_t idx, ///< The fragment index (0 -> earliest)
 		       CryptoHash const& key, ///< fragment cache key
 		       uint64_t offset ///< offset of  first byte of fragment in the alternate content.
 		       );
@@ -1765,7 +1784,7 @@ HTTPInfo::object_size_set(int64_t size)
   m_alt->m_earliest.m_offset = size;
 }
 
-inline HTTPInfo::FragmentDescriptor*
+inline HTTPInfo::FragmentDescriptorTable*
 HTTPInfo::get_frag_table()
 {
   return m_alt ? m_alt->m_fragments : 0;
@@ -1922,6 +1941,18 @@ HTTPRangeSpec::end()
   case MULTI: return &(*(_ranges.end()));
   default: return NULL;
   }
+}
+
+inline HTTPCacheAlt::FragmentDescriptor&
+HTTPCacheAlt::FragmentDescriptorTable::operator [] (int idx)
+{
+  return *(reinterpret_cast<FragmentDescriptor*>(reinterpret_cast<char*>(this+1) + sizeof(FragmentDescriptor)*(idx-1)));
+}
+
+inline size_t
+HTTPCacheAlt::FragmentDescriptorTable::calc_size(uint32_t n)
+{
+  return n <= 1 ? 0 : sizeof(FragmentDescriptorTable) + (n-1) * sizeof(FragmentDescriptor);
 }
 
 #endif /* __HTTP_H__ */

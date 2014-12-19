@@ -297,7 +297,7 @@ CacheVC::CacheVC():alternate_index(CACHE_ALT_INDEX_DEFAULT)
 }
 
 #ifdef HTTP_CACHE
-HTTPInfo::FragmentDescriptor*
+HTTPInfo::FragmentDescriptorTable*
 CacheVC::get_frag_table()
 {
   ink_assert(alternate.valid());

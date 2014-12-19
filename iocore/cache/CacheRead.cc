@@ -664,13 +664,13 @@ LreadMain:
 void
 CacheVC::update_key_to_frag_idx(int target)
 {
-  FragmentDescriptor* frags = alternate.get_frag_table();
+  FragmentDescriptorTable& frags = (*alternate.get_frag_table());
 
   if (0 == target) {
     fragment = 0;
     key = earliest_key;
-  } else if (! frags[target-1].m_key.is_zero()) {
-    key = frags[target-1].m_key;
+  } else if (! frags[target].m_key.is_zero()) {
+    key = frags[target].m_key;
   } else { // step through the hard way
     if (target < fragment) { // going backwards
       if (target < (fragment - target)) { // faster to go from start
@@ -680,19 +680,19 @@ CacheVC::update_key_to_frag_idx(int target)
         while (target < fragment) {
           prev_CacheKey(&key, &key);
           --fragment;
-          if (frags[fragment-1].m_key.is_zero())
-            frags[fragment-1].m_key = key; // might as well store it as we go.
-          else ink_assert(frags[fragment-1].m_key == key);
+          if (frags[fragment].m_key.is_zero())
+            frags[fragment].m_key = key; // might as well store it as we go.
+          else ink_assert(frags[fragment].m_key == key);
         }
       }
     }
     // advance to target if we're not already there.
     while (target > fragment) {
       next_CacheKey(&key, &key);
+      ++fragment;
       if (frags[fragment].m_key.is_zero())
         frags[fragment].m_key = key; // might as well store it as we go.
       else ink_assert(frags[fragment].m_key == key);
-      ++fragment;
     }
   }
 }
@@ -700,19 +700,20 @@ CacheVC::update_key_to_frag_idx(int target)
 int
 CacheVC::frag_idx_for_offset(uint64_t offset)
 {
-  FragmentDescriptor* frags = alternate.get_frag_table();
+  FragmentDescriptorTable* frags = alternate.get_frag_table();
   int count = alternate.get_frag_count();
   uint32_t ffs = alternate.get_frag_fixed_size();
-
   int idx = count / 2;
+
   ink_assert(offset < doc_len);
+
   if (ffs) idx = offset / ffs; // good guess as to the right offset.
 
-  // need to account for empty earliest in here somewhere.
+  if (count > 1 && 0 == (*frags)[1].m_offset) ++idx;
 
   do {
-    uint64_t upper = idx >= count ? doc_len : frags[idx].m_offset;
-    uint64_t lower = idx <= 0 ? 0 : frags[idx-1].m_offset;
+    uint64_t upper = idx >= count ? doc_len : (*frags)[idx+1].m_offset;
+    uint64_t lower = idx <= 0 ? 0 : (*frags)[idx].m_offset;
     if (offset < lower) idx = idx / 2;
     else if (offset >= upper) idx = (count + idx + 1)/2;
     else break;
@@ -777,11 +778,11 @@ CacheVC::openReadMain(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSED */)
 
 #ifdef HTTP_CACHE
   if (resp_range.getRemnantSize()) {
-    FragmentDescriptor* frags = alternate.get_frag_table();
+    FragmentDescriptorTable* frags = alternate.get_frag_table();
     int n_frags = alternate.get_frag_count();
 
     // Quick check for offset in next fragment - very common
-    if (target_offset >= frag_upper_bound && (!frags || fragment >= (n_frags-1) || target_offset < frags[fragment].m_offset)) {
+    if (target_offset >= frag_upper_bound && (!frags || fragment > n_frags || target_offset < (*frags)[fragment].m_offset)) {
       Debug("amc", "Non-seeking continuation to next fragment");
     } else {
       int target = -1; // target fragment index.
@@ -797,7 +798,7 @@ CacheVC::openReadMain(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSED */)
       target = this->frag_idx_for_offset(target_offset);
       this->update_key_to_frag_idx(target);
       /// one frag short, because it gets bumped when the fragment is actually read.
-      frag_upper_bound = target > 0 ? frags[target-1].m_offset : 0;
+      frag_upper_bound = target > 0 ? (*frags)[target].m_offset : 0;
       Debug("amc", "Fragment seek from %d to %d target offset %" PRIu64, fragment - 1, target, target_offset);
     }
   }
