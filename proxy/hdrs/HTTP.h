@@ -557,6 +557,7 @@ struct HTTPRangeSpec {
 
   /// Range iteration type.
   typedef Range* iterator;
+  typedef Range const* const_iterator;
 
   /// Current state of the overall specification.
   /// @internal We can distinguish between @c SINGLE and @c MULTI by looking at the
@@ -679,10 +680,11 @@ struct HTTPRangeSpec {
 
   /// Iterator for first range.
   iterator begin();
+  const_iterator begin() const;
   /// Iterator past last range.
   iterator end();
+  const_iterator end() const;
 
-protected:
   self& add(uint64_t low, uint64_t high);
 };
 
@@ -1543,8 +1545,13 @@ struct HTTPCacheAlt
   {
     CryptoHash m_key; ///< Key for fragment.
     uint64_t m_offset:48; ///< Starting offset of fragment in object.
-    unsigned int m_cached_p:1; ///< Presence bit (is fragment in cache?)
-    unsigned int m_zero:15; ///< Zero fill for future use.
+    union {
+      uint16_t raw;
+      struct {
+	unsigned int cached_p:1; ///< Presence bit (is fragment in cache?)
+	unsigned int zero:15; ///< Zero fill for future use.
+      } m_flag;
+    };
   };
 
   /** Holds the table of fragment descriptors.
@@ -1678,7 +1685,7 @@ public:
   void id_set(int32_t id) { m_alt->m_id = id; }
   void rid_set(int32_t id) { m_alt->m_rid = id; }
 
-  CryptoHash object_key_get();
+  CryptoHash const& object_key_get();
   void object_key_get(CryptoHash *);
   bool compare_object_key(const CryptoHash *);
   int64_t object_size_get();
@@ -1703,21 +1710,33 @@ public:
   void request_sent_time_set(time_t t) { m_alt->m_request_sent_time = t; }
   void response_received_time_set(time_t t) { m_alt->m_response_received_time = t; }
 
+  /** Compute missing ranges.
+      Given a request range spec compute a range spec for data that is not in the cache.
+  */
+  void get_missing_ranges(
+			   HTTPRangeSpec const& req ///< [in] UA request with content length applied
+			  , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
+			  );
+
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
   /// the indexing starts with the second (non-earliest) fragment.
   FragmentDescriptorTable* get_frag_table();
+
+  /// Get the fragment index for @a offset.
+  int get_frag_index_of(int64_t offset);
+  /// Get the fragment key for an @a offset.
+  CryptoHash const& get_frag_key_of(int64_t offset);
+  /// Get the fragment key of the @a idx fragment.
+  CryptoHash const& get_frag_key(int idx);
+
   /// Get the number of fragments.
-  /// 0 means resident alternate, 1 means single fragment, 2 means multi-fragment.
+  /// 0 means resident alternate, 1 means single fragment, > 1 means multi-fragment.
   int get_frag_count() const;
   /// Get the target fragment size.
   uint32_t get_frag_fixed_size() const;
-  /// Mark a fragment as having been written to this alternate.
-  void mark_frag_write(
-		       uint32_t idx, ///< The fragment index (0 -> earliest)
-		       CryptoHash const& key, ///< fragment cache key
-		       uint64_t offset ///< offset of  first byte of fragment in the alternate content.
-		       );
+  /// Mark a fragment at index @a idx as written to cache.
+  void mark_frag_write(uint32_t idx);
 
   // Sanity check functions
   static bool check_marshalled(char *buf, int len);
@@ -1748,7 +1767,7 @@ HTTPInfo::operator =(const HTTPInfo & m)
   return *this;
 }
 
-inline CryptoHash
+inline CryptoHash const&
 HTTPInfo::object_key_get()
 {
   return m_alt->m_earliest.m_key;
@@ -1800,6 +1819,18 @@ inline uint32_t
 HTTPInfo::get_frag_fixed_size() const
 {
   return m_alt ? m_alt->m_fixed_fragment_size : 0;
+}
+
+inline CryptoHash const&
+HTTPInfo::get_frag_key_of(int64_t offset)
+{
+  return this->get_frag_key(this->get_frag_index_of(offset));
+}
+
+inline CryptoHash const&
+HTTPInfo::get_frag_key(int idx)
+{
+  return m_alt ? (*m_alt->m_fragments)[idx].m_key : CRYPTO_HASH_ZERO;
 }
 
 inline
@@ -1941,6 +1972,18 @@ HTTPRangeSpec::end()
   case MULTI: return &(*(_ranges.end()));
   default: return NULL;
   }
+}
+
+inline HTTPRangeSpec::const_iterator
+HTTPRangeSpec::begin() const
+{
+  return const_cast<self*>(this)->begin();
+}
+
+inline HTTPRangeSpec::const_iterator
+HTTPRangeSpec::end() const
+{
+  return const_cast<self*>(this)->end();
 }
 
 inline HTTPCacheAlt::FragmentDescriptor&

@@ -470,6 +470,12 @@ CacheVC::set_http_info(CacheHTTPInfo *ainfo)
 }
 #endif
 
+void
+CacheVC::set_http_content_length(int64_t /* cl */)
+{
+  ink_release_assert(! "[amc] Store the content length somewhere");
+}
+
 bool CacheVC::set_pin_in_cache(time_t time_pin)
 {
   if (total_len) {
@@ -2356,6 +2362,19 @@ CacheVC::is_pread_capable()
 {
   return !f.read_from_writer_called;
 }
+
+# if 0
+void
+CacheVC::get_missing_ranges(HTTPRangeSpec& missing)
+{
+  missing.reset();
+  if (0 == alternate.);
+  // For now we'll just compute the convex hull of the missing data.
+  for ( RangeBox::const_iterator spot = req.begin(), limit = req.end() ; spot != limit ; ++spot ) {
+    
+  }
+}
+#endif
 
 #define STORE_COLLISION 1
 

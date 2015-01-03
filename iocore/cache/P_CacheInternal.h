@@ -284,7 +284,7 @@ struct CacheVC: public CacheVConnection
     return -1;
   }
 
-  bool writer_done();
+  //  bool writer_done();
   int calluser(int event);
   int callcont(int event);
   int die();
@@ -324,6 +324,7 @@ struct CacheVC: public CacheVConnection
   int openWriteMain(int event, Event *e);
   int openWriteStartDone(int event, Event *e);
   int openWriteStartBegin(int event, Event *e);
+  int openWriteEmptyEarliestDone(int event, Event* e);
 
   int updateVector(int event, Event *e);
   int updateReadDone(int event, Event *e);
@@ -376,7 +377,8 @@ struct CacheVC: public CacheVConnection
   int frag_idx_for_offset(uint64_t offset);
 
   virtual char const* get_http_range_boundary_string(int* len) const;
-  virtual uint64_t get_http_content_size();
+  virtual int64_t get_http_partial_content_size();
+  virtual void set_http_content_length(int64_t size);
   virtual HTTPRangeSpec& get_http_range_spec();
   virtual bool is_http_partial_content();
 
@@ -425,7 +427,8 @@ struct CacheVC: public CacheVConnection
   OpenDirEntry *od;
   AIOCallbackInternal io;
   int alternate_index;          // preferred position in vector
-  LINK(CacheVC, opendir_link);
+  LINK(CacheVC, OpenDir_Link); ///< Reader/writer link per alternate in @c OpenDir.
+  LINK(CacheVC, Active_Link); ///< Active I/O pending list in @c OpenDir.
 #ifdef CACHE_STAT_PAGES
   LINK(CacheVC, stat_link);
 #endif
@@ -807,6 +810,7 @@ CacheVC::do_write_lock_call()
   return handleWriteLock(EVENT_CALL, 0);
 }
 
+# if 0
 TS_INLINE bool
 CacheVC::writer_done()
 {
@@ -823,6 +827,7 @@ CacheVC::writer_done()
     return true;
   return false;
 }
+# endif
 
 TS_INLINE int
 Vol::close_write(CacheVC *cont)
@@ -961,6 +966,18 @@ rand_CacheKey(CacheKey *next_key, ProxyMutex *mutex)
   next_key->b[1] = mutex->thread_holding->generator.random();
 }
 
+# if 1
+void TS_INLINE
+next_CacheKey(CacheKey *next_key, CacheKey *key)
+{
+  next_key->next(*key);
+}
+void TS_INLINE
+prev_CacheKey(CacheKey *prev_key, CacheKey *key)
+{
+  prev_key->prev(*key);
+}
+# else
 extern uint8_t CacheKey_next_table[];
 void TS_INLINE
 next_CacheKey(CacheKey *next_key, CacheKey *key)
@@ -981,6 +998,7 @@ prev_CacheKey(CacheKey *prev_key, CacheKey *key)
     b[i] = 256 + CacheKey_prev_table[k[i]] - k[i - 1];
   b[0] = CacheKey_prev_table[k[0]];
 }
+# endif
 
 TS_INLINE unsigned int
 next_rand(unsigned int *p)
@@ -1381,6 +1399,7 @@ local_cache()
   return theCache;
 }
 
-LINK_DEFINITION(CacheVC, opendir_link)
+LINK_DEFINITION(CacheVC, OpenDir_Link)
+LINK_DEFINITION(CacheVC, Active_Link)
 
 #endif /* _P_CACHE_INTERNAL_H__ */

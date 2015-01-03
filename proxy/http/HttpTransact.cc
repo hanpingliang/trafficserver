@@ -5639,8 +5639,7 @@ HttpTransact::initialize_state_variables_from_response(State* s, HTTPHdr* incomi
     // This code used to discriminate CL: headers when the origin disabled keep-alive.
     if (incoming_response->presence(MIME_PRESENCE_CONTENT_LENGTH)) {
       int64_t cl = incoming_response->get_content_length();
-
-      s->hdr_info.response_content_length = (cl >= 0) ? cl : HTTP_UNDEFINED_CL;
+      s->hdr_info.response_content_length = cl < 0 ? HTTP_UNDEFINED_CL : cl;
       s->hdr_info.trust_response_cl = true;
     } else {
       s->hdr_info.response_content_length = HTTP_UNDEFINED_CL;
@@ -8836,7 +8835,7 @@ HttpTransact::change_response_header_because_of_range_request(State *s, HTTPHdr 
     field->value_set(header->m_heap, header->m_mime, buff, n);
     header->field_attach(field);
   }
-  header->set_content_length(cache_read_vc->get_http_content_size());
+  header->set_content_length(cache_read_vc->get_http_partial_content_size());
 }
 
 #if TS_HAS_TESTS

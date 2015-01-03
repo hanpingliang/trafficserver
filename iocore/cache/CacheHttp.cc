@@ -29,10 +29,9 @@
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
 
-static vec_info default_vec_info;
+static CacheHTTPInfoVector::Item default_vec_info;
 
 #ifdef HTTP_CACHE
-static CacheHTTPInfo default_http_info;
 
 CacheHTTPInfoVector::CacheHTTPInfoVector()
 :magic(NULL), data(&default_vec_info, 4), xcount(0)
@@ -47,7 +46,7 @@ CacheHTTPInfoVector::~CacheHTTPInfoVector()
   int i;
 
   for (i = 0; i < xcount; i++) {
-    data[i].alternate.destroy();
+    data[i]._alternate.destroy();
   }
   vector_buf.clear();
   magic = NULL;
@@ -62,7 +61,7 @@ CacheHTTPInfoVector::insert(CacheHTTPInfo * info, int index)
   if (index == CACHE_ALT_INDEX_DEFAULT)
     index = xcount++;
 
-  data(index).alternate.copy_shallow(info);
+  data(index)._alternate.copy_shallow(info);
   return index;
 }
 
@@ -78,8 +77,8 @@ CacheHTTPInfoVector::detach(int idx, CacheHTTPInfo * r)
   ink_assert(idx >= 0);
   ink_assert(idx < xcount);
 
-  r->copy_shallow(&data[idx].alternate);
-  data[idx].alternate.destroy();
+  r->copy_shallow(&data[idx]._alternate);
+  data[idx]._alternate.destroy();
 
   for (i = idx; i < (xcount - 1); i++) {
     data[i] = data[i + i];
@@ -95,7 +94,7 @@ void
 CacheHTTPInfoVector::remove(int idx, bool destroy)
 {
   if (destroy)
-    data[idx].alternate.destroy();
+    data[idx]._alternate.destroy();
 
   for (; idx < (xcount - 1); idx++)
     data[idx] = data[idx + 1];
@@ -113,7 +112,7 @@ CacheHTTPInfoVector::clear(bool destroy)
 
   if (destroy) {
     for (i = 0; i < xcount; i++) {
-      data[i].alternate.destroy();
+      data[i]._alternate.destroy();
     }
   }
   xcount = 0;
@@ -135,14 +134,14 @@ CacheHTTPInfoVector::print(char *buffer, size_t buf_size, bool temps)
   purl = 1;
 
   for (i = 0; i < xcount; i++) {
-    if (data[i].alternate.valid()) {
+    if (data[i]._alternate.valid()) {
       if (purl) {
         Arena arena;
         char *url;
 
         purl = 0;
         URL u;
-        data[i].alternate.request_url_get(&u);
+        data[i]._alternate.request_url_get(&u);
         url = u.string_get(&arena);
         if (url) {
           snprintf(p, buf_size, "[%s] ", url);
@@ -152,9 +151,9 @@ CacheHTTPInfoVector::print(char *buffer, size_t buf_size, bool temps)
         }
       }
 
-      if (temps || !(data[i].alternate.object_key_get() == zero_key)) {
-        snprintf(p, buf_size, "[%d %s]", data[i].alternate.id_get(),
-                     CacheKey(data[i].alternate.object_key_get()).toHexStr(buf));
+      if (temps || !(data[i]._alternate.object_key_get() == zero_key)) {
+        snprintf(p, buf_size, "[%d %s]", data[i]._alternate.id_get(),
+                     CacheKey(data[i]._alternate.object_key_get()).toHexStr(buf));
         tmp = strlen(p);
         p += tmp;
         buf_size -= tmp;
@@ -172,7 +171,7 @@ CacheHTTPInfoVector::marshal_length()
   int length = 0;
 
   for (int i = 0; i < xcount; i++) {
-    length += data[i].alternate.marshal_length();
+    length += data[i]._alternate.marshal_length();
   }
 
   return length;
@@ -189,7 +188,7 @@ CacheHTTPInfoVector::marshal(char *buf, int length)
   ink_assert(!(((intptr_t) buf) & 3));      // buf must be aligned
 
   for (int i = 0; i < xcount; i++) {
-    int tmp = data[i].alternate.marshal(buf, length);
+    int tmp = data[i]._alternate.marshal(buf, length);
     length -= tmp;
     buf += tmp;
     count++;
@@ -223,11 +222,89 @@ CacheHTTPInfoVector::get_handles(const char *buf, int length, RefCountObj * bloc
     }
     buf += tmp;
 
-    data(xcount).alternate = info;
+    data(xcount)._alternate = info;
     xcount++;
   }
 
   return ((caddr_t) buf - (caddr_t) start);
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+int
+CacheHTTPInfoVector::index_of(CacheKey const& alt_key)
+{
+  int zret;
+  for ( zret = 0 ; zret < xcount && alt_key != data[zret]._alternate.object_key_get() ; ++zret )
+    ;
+  return zret < xcount ? zret : -1;
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+CacheKey const&
+CacheHTTPInfoVector::key_for(CacheKey const& alt_key, int64_t offset)
+{
+  int idx = this->index_of(alt_key);
+  Item& item = data[idx];
+  return item._alternate.get_frag_key_of(offset);
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+CacheHTTPInfoVector&
+CacheHTTPInfoVector::write_active(CacheKey const& alt_key, CacheVC* vc, int64_t offset)
+{
+  int idx = this->index_of(alt_key);
+  Item& item = data[idx];
+  vc->fragment = item._alternate.get_frag_index_of(offset);
+  item._active.push(vc);
+  return *this;
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+CacheHTTPInfoVector&
+CacheHTTPInfoVector::write_complete(CacheKey const& alt_key, CacheVC* vc, bool success)
+{
+  int idx = this->index_of(alt_key);
+  Item& item = data[idx];
+  item._active.remove(vc);
+  if (success) item._alternate.mark_frag_write(vc->fragment);
+  return *this;
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+bool
+CacheHTTPInfoVector::is_write_active(CacheKey const& alt_key, int64_t offset)
+{
+  int alt_idx = this->index_of(alt_key);
+  Item& item = data[alt_idx];
+  int frag_idx = item._alternate.get_frag_index_of(offset);
+  for ( CacheVC* vc = item._active.head ; vc ; vc = item._active.next(vc) ) {
+    if (vc->fragment == frag_idx) return true;
+  }
+  return false;
+}
+
+/*-------------------------------------------------------------------------
+  -------------------------------------------------------------------------*/
+
+CacheHTTPInfoVector&
+CacheHTTPInfoVector::waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t offset)
+{
+  int alt_idx = this->index_of(alt_key);
+  Item& item = data[alt_idx];
+  int frag_idx = item._alternate.get_frag_index_of(offset);
+  vc->fragment = frag_idx;
+  item._waiting.push(vc);
+  return *this;
 }
 
 /*-------------------------------------------------------------------------

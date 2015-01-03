@@ -2510,6 +2510,8 @@ HttpSM::setup_cache_lookup_complete_api()
 int
 HttpSM::state_cache_open_read(int event, void *data)
 {
+  HTTPRangeSpec range;
+
   STATE_ENTER(&HttpSM::state_cache_open_read, event);
   milestones.cache_open_read_end = ink_get_hrtime();
 
@@ -2531,6 +2533,10 @@ HttpSM::state_cache_open_read(int event, void *data)
 
       cache_sm.cache_read_vc->get_http_info(&t_state.cache_info.object_read);
       t_state.cache_info.is_ram_cache_hit = (cache_sm.cache_read_vc)->is_ram_cache_hit();
+
+      // Check if it's all there or we have to arrange for a cache write to fill in the
+      // missing bits.
+      t_state.cache_info.object_read->get_missing_ranges(cache_sm.cache_read_vc->get_http_range_spec(), range);
 
       ink_assert(t_state.cache_info.object_read != 0);
       call_transact_and_set_next_state(HttpTransact::HandleCacheOpenRead);
@@ -5848,7 +5854,7 @@ HttpSM::setup_cache_read_transfer()
   ink_assert(cache_sm.cache_read_vc != NULL);
 
 //  doc_size = t_state.cache_info.object_read->object_size_get();
-  doc_size = cache_sm.cache_read_vc->get_http_content_size();
+  doc_size = cache_sm.cache_read_vc->get_http_partial_content_size();
   alloc_index = buffer_size_to_index(doc_size + index_to_buffer_size(HTTP_HEADER_BUFFER_SIZE_INDEX));
 
 #ifndef USE_NEW_EMPTY_MIOBUFFER
@@ -5938,6 +5944,9 @@ HttpSM::setup_cache_write_transfer(HttpCacheSM * c_sm,
 
   c_sm->cache_write_vc->set_http_info(store_info);
   store_info->clear();
+
+  int64_t cl = t_state.hdr_info.response_content_length;
+  if (cl != HTTP_UNDEFINED_CL) c_sm->cache_write_vc->set_http_content_length(cl);
 
   tunnel.add_consumer(c_sm->cache_write_vc,
                       source_vc, &HttpSM::tunnel_handler_cache_write, HT_CACHE_WRITE, name, skip_bytes);

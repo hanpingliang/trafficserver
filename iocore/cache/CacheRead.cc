@@ -167,8 +167,8 @@ CacheVC::load_http_info(CacheHTTPInfoVector* info, Doc* doc, RefCountObj * block
       vol->header->version.ink_major == 23 && vol->header->version.ink_minor == 0
     ) {
     for ( int i = info->xcount - 1 ; i >= 0 ; --i ) {
-      info->data(i).alternate.m_alt->m_response_hdr.m_mime->recompute_accelerators_and_presence_bits();
-      info->data(i).alternate.m_alt->m_request_hdr.m_mime->recompute_accelerators_and_presence_bits();
+      info->data(i)._alternate.m_alt->m_response_hdr.m_mime->recompute_accelerators_and_presence_bits();
+      info->data(i)._alternate.m_alt->m_request_hdr.m_mime->recompute_accelerators_and_presence_bits();
     }
   }
   return zret;
@@ -180,8 +180,8 @@ CacheVC::get_http_range_boundary_string(int* len) const
   return resp_range.getBoundaryStr(len);
 }
 
-uint64_t
-CacheVC::get_http_content_size()
+int64_t
+CacheVC::get_http_partial_content_size()
 {
   return resp_range.calcContentLength();
 }
@@ -214,8 +214,8 @@ CacheVC::openReadFromWriterFailure(int event, Event * e)
 int
 CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSED */)
 {
-  intptr_t err = ECACHE_DOC_BUSY;
-  CacheVC *w = NULL;
+//  intptr_t err = ECACHE_DOC_BUSY;
+//  CacheVC *w = NULL;
 
   ink_assert(vol->mutex->thread_holding == mutex->thread_holding && write_vc == NULL);
 
@@ -223,6 +223,8 @@ CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSE
     return EVENT_RETURN;
 
   if (frag_type != CACHE_FRAG_TYPE_HTTP) {
+    ink_release_assert(! "[amc] Fix reader from writer for non-HTTP");
+# if 0
     ink_assert(od->num_writers == 1);
     w = od->writers.head;
     if (w->start_time > start_time || w->closed < 0) {
@@ -232,6 +234,7 @@ CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSE
     if (!w->closed)
       return -err;
     write_vc = w;
+# endif
   }
 #ifdef HTTP_CACHE
   else {
@@ -241,6 +244,8 @@ CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSE
       vector.insert(write_vector->get(c));
     // check if all the writers who came before this reader have
     // set the http_info.
+    ink_release_assert(! "[amc] Fix choosing read from writer logic");
+# if 0
     for (w = (CacheVC *) od->writers.head; w; w = (CacheVC *) w->opendir_link.next) {
       if (w->start_time > start_time || w->closed < 0)
         continue;
@@ -272,7 +277,7 @@ CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSE
       if (w->alternate.valid())
         vector.insert(&w->alternate, alt_ndx);
     }
-
+# endif
     if (!vector.count()) {
       if (od->reading_vec) {
        // the writer(s) are reading the vector, so there is probably
@@ -289,13 +294,16 @@ CacheVC::openReadChooseWriter(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSE
         return -ECACHE_ALT_MISS;
     } else
       alternate_index = 0;
-    CacheHTTPInfo *obj = vector.get(alternate_index);
+//    CacheHTTPInfo *obj = vector.get(alternate_index);
+    // amc
+# if 0
     for (w = (CacheVC *) od->writers.head; w; w = (CacheVC *) w->opendir_link.next) {
       if (obj->m_alt == w->alternate.m_alt) {
         write_vc = w;
         break;
       }
     }
+# endif
     vector.clear(false);
     if (!write_vc) {
       DDebug("cache_read_agg", "%p: key: %X writer alternate different: %d", this, first_key.slice32(1), alternate_index);
@@ -364,6 +372,8 @@ CacheVC::openReadFromWriter(int event, Event * e)
     } else
       ink_assert(write_vc);
   } else {
+    ink_release_assert(! "[amc] fix this");
+# if 0
     if (writer_done()) {
       MUTEX_RELEASE(lock);
       DDebug("cache_read_agg",
@@ -373,6 +383,7 @@ CacheVC::openReadFromWriter(int event, Event * e)
       SET_HANDLER(&CacheVC::openReadStartHead);
       return openReadStartHead(event, e);
     }
+# endif
   }
 #ifdef HTTP_CACHE
   OpenDirEntry *cod = od;
@@ -620,6 +631,8 @@ Lread:
         goto Lcallreturn;
       return EVENT_CONT;
     } else if (write_vc) {
+      ink_release_assert(! "[amc] Handle this");
+# if 0
       if (writer_done()) {
         last_collision = NULL;
         while (dir_probe(&earliest_key, vol, &dir, &last_collision)) {
@@ -640,6 +653,7 @@ Lread:
       }
       DDebug("cache_read_agg", "%p: key: %X ReadRead retrying: %d", this, first_key.slice32(1), (int)vio.ndone);
       VC_SCHED_WRITER_RETRY(); // wait for writer
+# endif
     }
     // fall through for truncated documents
   }
@@ -647,7 +661,7 @@ Lerror:
   char tmpstring[100];
   Warning("Document %s truncated", earliest_key.toHexStr(tmpstring));
   return calluser(VC_EVENT_ERROR);
-Ldone:
+//Ldone:
   return calluser(VC_EVENT_EOS);
 Lcallreturn:
   return handleEvent(AIO_EVENT_DONE, 0);
@@ -826,6 +840,13 @@ CacheVC::openReadMain(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSED */)
       goto Lcallreturn;
     return EVENT_CONT;
   } else if (write_vc) {
+    ink_release_assert(! "[amc] Handle case where fragment is not in the directory during read");
+    /* Check for an OpenDirEntry - if none, no hope. If so, see if any of the writers in it are still
+       planning to write this fragment (might check against all fragments - if any aren't going to
+       be written, might just give up at that point rather than hope some other user agent will happen
+       to ask for the missing fragments. Although, if there's a herd, that might not be so far fetched).
+    */
+# if 0
     if (writer_done()) {
       last_collision = NULL;
       while (dir_probe(&earliest_key, vol, &dir, &last_collision)) {
@@ -843,15 +864,16 @@ CacheVC::openReadMain(int /* event ATS_UNUSED */, Event * /* e ATS_UNUSED */)
     DDebug("cache_read_agg", "%p: key: %X ReadMain retrying: %d", this, first_key.slice32(1), (int)vio.ndone);
     SET_HANDLER(&CacheVC::openReadMain);
     VC_SCHED_WRITER_RETRY();
+# endif
   }
   if (is_action_tag_set("cache"))
     ink_release_assert(false);
   Warning("Document %X truncated at %d of %d, missing fragment %X", first_key.slice32(1), (int)vio.ndone, (int)doc_len, key.slice32(1));
   // remove the directory entry
   dir_delete(&earliest_key, vol, &earliest_dir);
-Lerror:
+//Lerror:
   return calluser(VC_EVENT_ERROR);
-Leos:
+//Leos:
   return calluser(VC_EVENT_EOS);
 Lcallreturn:
   return handleEvent(AIO_EVENT_DONE, 0);
@@ -1210,7 +1232,6 @@ CacheVC::openReadStartHead(int event, Event * e)
       }
       if (resp_range.isMulti())
         resp_range.setContentTypeFromResponse(alternate.response_get()).generateBoundaryStr(earliest_key);
-
 
       if (key == doc->key) {      // is this my data?
         f.single_fragment = doc->single_fragment();

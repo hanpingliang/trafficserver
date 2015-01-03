@@ -2102,47 +2102,92 @@ HTTPInfo::get_handle(char *buf, int len)
 }
 
 void
-HTTPInfo::mark_frag_write(uint32_t idx, CryptoHash const& key, uint64_t offset) {
+HTTPInfo::mark_frag_write(uint32_t idx) {
   FragmentDescriptor* frag;
   FragmentDescriptorTable* old_table = 0;
-  uint32_t n = 0; // set if we need to allocate, this is max array index needed.
 
   ink_assert(m_alt);
   ink_assert(idx > 0);
 
-  if (0 == m_alt->m_fragments) {
+  if (0 == m_alt->m_fragments || idx > m_alt->m_fragments->m_n) { // no room at the inn
+    int64_t obj_size = this->object_size_get();
     uint32_t ff_size = this->get_frag_fixed_size();
+    uint32_t n = 0; // set if we need to allocate, this is max array index needed.
 
-    n = (this->object_size_get() + ff_size - 1) / ff_size;
-    if (idx > n) n = idx;
-    ++n; // account for possible empty earliest.
-  } else if (idx > m_alt->m_fragments->m_n) {
-    n = idx + MAX(1, idx>>2); // grow by 25% but at least 1
-    old_table = m_alt->m_fragments;
-  }
+    if (0 == m_alt->m_fragments && obj_size > 0 && ff_size > 0) {
+      n = (obj_size + ff_size - 1) / ff_size;
+      if (idx > n) n = idx;
+      ++n; // account for possible empty earliest.
+    } else {
+      n = idx + MAX(4, idx>>1); // grow by 50% and at least 4
+      old_table = m_alt->m_fragments;
+    }
 
-  // do allocation if needed.
-  if (n) {
     size_t size = FragmentDescriptorTable::calc_size(n);
     size_t old_size = 0;
+    size_t old_count = 0;
+    int64_t offset = 0;
+    CryptoHash key;
 
     m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
     if (old_table) {
-      old_size = FragmentDescriptorTable::calc_size(old_table->m_n);
+      old_count = old_table->m_n;
+      frag = &((*old_table)[old_count - 1]);
+      offset = frag->m_offset;
+      key = frag->m_key;
+      old_size = FragmentDescriptorTable::calc_size(old_count);
       memcpy(m_alt->m_fragments, old_table, old_size);
       ats_free(old_table);
+    } else {
+      key = m_alt->m_earliest.m_key;
     }
-    memset(m_alt->m_fragments + old_size, 0, size - old_size);
     m_alt->m_fragments->m_n = n;
     m_alt->m_flag.table_allocated_p = true;
+    // fill out the new parts with offsets & keys.
+    for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count < n ; ++old_count, ++frag ) {
+      key.next();
+      offset += ff_size;
+      frag->m_key = key;
+      frag->m_offset = offset;
+    }
   }
 
-  frag = &((*m_alt->m_fragments)[idx]);
-  frag->m_key = key;
-  frag->m_offset = offset;
-  frag->m_cached_p = true;
+  (*m_alt->m_fragments)[idx].m_flag.cached_p = true;
 }
 
+int
+HTTPInfo::get_frag_index_of(int64_t offset)
+{
+  int zret = 0;
+  int n = this->get_frag_count();
+  uint32_t ff_size = this->get_frag_fixed_size();
+
+  if (n < 2) {
+    // Not multi-frag, so just compute the index.
+    zret = offset / ff_size;
+  } else {
+    FragmentDescriptorTable* frags = this->get_frag_table();
+    zret = offset / ff_size;
+    if ((*frags)[1].m_offset == 0) ++zret;
+    // Need to handle old data where the offsets are not guaranteed to be regular.
+    // So we guess (which should be close) and if we're right, boom, else linear
+    // search.
+    while (0 <= zret) {
+      if (static_cast<uint64_t>(offset) < (*frags)[zret].m_offset) {
+        --zret;
+      } else if (zret >= n-1) {
+        // if we're at the last known fragment, just compute the index.
+        zret += (static_cast<uint64_t>(offset) - (*frags)[zret].m_offset) / ff_size;
+        break;
+      } else if (static_cast<uint64_t>(offset) >= (*frags)[zret+1].m_offset) {
+        ++zret;
+      } else {
+        break;
+      }
+    }
+  }
+  return zret;
+}
 /***********************************************************************
  *                                                                     *
  *                      R A N G E   S U P P O R T                      *
@@ -2365,4 +2410,30 @@ HTTPRangeSpec::writePartBoundary(MIOBuffer* out, char const* boundary_str, size_
   out->append_block(b);
 
   return spot - d->data();
+}
+
+void
+HTTPInfo::get_missing_ranges(HTTPRangeSpec const& req, HTTPRangeSpec& missing)
+{
+  int64_t ffs = m_alt->m_fixed_fragment_size;
+  int32_t ridx = 0, lidx = this->get_frag_count()-1;
+  FragmentDescriptorTable& frags = *(this->get_frag_table());
+
+  missing.clear();
+  // For now we'll just compute the convex hull of the missing data.
+  for ( HTTPRangeSpec::const_iterator spot = req.begin(), limit = req.end() ; spot != limit ; ++spot ) {
+    int32_t lhs = spot->_min / ffs;
+    int32_t rhs = spot->_max / ffs;
+    while (lhs < lidx && lhs <= rhs && frags[lhs].m_flag.cached_p)
+      ++lhs;
+    if (lhs > rhs) continue; // All of this range is present.
+    while (rhs > ridx && frags[rhs].m_flag.cached_p) // must hit missing frag at lhs at the latest
+      --rhs;
+    // expand range if needed.
+    lidx = lhs;
+    ridx = rhs;
+  }
+  // if the convex hull of the missing ranges is non-empty, add it.
+  if (lidx <= ridx)
+    missing.add(lidx * ffs, ridx * ffs);
 }

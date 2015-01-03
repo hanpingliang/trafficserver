@@ -49,22 +49,59 @@ struct CacheHTTPInfo
 
 #endif //HTTP_CACHE
 
-struct vec_info
-{
-  CacheHTTPInfo alternate;
-};
+LINK_FORWARD_DECLARATION(CacheVC, OpenDir_Link) // forward declaration
+LINK_FORWARD_DECLARATION(CacheVC, Active_Link) // forward declaration
 
 struct CacheHTTPInfoVector
 {
+  typedef CacheHTTPInfoVector self; ///< Self reference type.
+
+  struct Item
+  {
+    /// Descriptor for an alternate for this object.
+    CacheHTTPInfo _alternate;
+    /// CacheVCs which are writing data to this alternate.
+    DLL<CacheVC, Link_CacheVC_OpenDir_Link> _writers;
+    ///@{ Active I/O
+    /** These two lists tracks active / outstanding I/O operations on The @a _active list is for writers
+	and the CacheVC should be on this list iff it has initiated an I/O that has not yet
+	completed. The @a _waiting list is for CacheVCs that are waiting for a fragment that is being written
+	by a CacheVC on the @a _active list. That is, it is waiting on the same I/O operation as the @a _active
+	CacheVC.
+
+	@internal An alternative implementation would be to have an array with an element for each fragment. With
+	this scheme we will have to linear search these lists to find the corresponding fragment I/O if any.
+	However, these lists should be short (only very rarely more than 1 or 2) and an array, given the ever
+	larger objects to be stored, would be large and require allocation. For these reasons I think this is the
+	better choice.
+    */
+    /// CacheVCs with pending write I/O.
+    DLL<CacheVC, Link_CacheVC_Active_Link> _active;
+    /// CacheVCs waiting on fragments.
+    DLL<CacheVC, Link_CacheVC_Active_Link> _waiting;
+    // To minimize list walking, we track the convex hull of fragments for which readers are waiting.
+    // We update the values whenever we must actually walk the list.
+    // Otherwise we maintain the convex hull invariant so if a written fragment is outside the range,
+    // we can assume no reader was waiting for it.
+    /// lowest fragment index for which a reader is waiting.
+    int _wait_idx_min;
+    /// highest fragment inddex for which a reader is waiting.
+    int _wait_idx_max;
+    ///@}
+  };
+
+  typedef CacheArray<Item> InfoVector;
+
   void *magic;
 
-    CacheHTTPInfoVector();
-   ~CacheHTTPInfoVector();
+  CacheHTTPInfoVector();
+  ~CacheHTTPInfoVector();
 
   int count()
   {
     return xcount;
   }
+
   int insert(CacheHTTPInfo * info, int id = -1);
   CacheHTTPInfo *get(int idx);
   void detach(int idx, CacheHTTPInfo * r);
@@ -81,7 +118,25 @@ struct CacheHTTPInfoVector
   int marshal(char *buf, int length);
   uint32_t get_handles(const char *buf, int length, RefCountObj * block_ptr = NULL);
 
-  CacheArray<vec_info> data;
+  /// Get the alternate index for the @a key.
+  int index_of(CacheKey const& key);
+  /// Mark a @c CacheVC as actively writing at @a offset on the alternate with @a alt_key.
+  self& write_active(CacheKey const& alt_key, CacheVC* vc, int64_t offset);
+  /// Mark an active write by @a vc as complete and indicate whether it had @a success.
+  /// If the write is not @a success then the fragment is not marked as cached.
+  self& write_complete(CacheKey const& alt_key, CacheVC* vc, bool success = true);
+  /// Indicate if a VC is currently writing to the fragment with this @a offset.
+  bool is_write_active(CacheKey const& alt_key, int64_t offset);
+  /// Mark a CacheVC as waiting for the fragment containing the byte at @a offset.
+  self& waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t offset);
+  /// Get the fragment key for a specific @a offset.
+  CacheKey const& key_for(CacheKey const& alt_key, int64_t offset);
+
+  /** Sigh, yet another custom array class.
+      @c Vec doesn't work because it really only works well with pointers, not objects.
+  */
+  InfoVector data;
+
   int xcount;
   Ptr<RefCountObj> vector_buf;
 };
@@ -187,7 +242,7 @@ CacheHTTPInfoVector::get(int idx)
 {
   ink_assert(idx >= 0);
   ink_assert(idx < xcount);
-  return &data[idx].alternate;
+  return &data[idx]._alternate;
 }
 
 inline bool

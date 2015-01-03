@@ -228,11 +228,29 @@ struct CacheVConnection:public VConnection
       @return A point to the string.
    */
   virtual char const* get_http_range_boundary_string(int* len) const = 0;
-  /** Get the effective content size.
-      This is the actual content sized modified (if appropriate) by range data.
+
+  /** Get the partial content size.
+
+      This is the amount of actual data, that is the content size modified (if appropriate) by range data.  Effectively
+      this is the value to be passed to the @c VIO while the content size is used in the HTTP header.
   */
-  virtual uint64_t get_http_content_size() = 0;
+  virtual int64_t get_http_partial_content_size() = 0;
+
+  /** Set the origin reported content size.
+
+      This is the content size reported by the origin server and should be considered a hint, not definitive. The object
+      size, as stored in the cache, is the actual amount of data received and cached.
+
+      @note This is the total content size as reported in the HTTP header, not the partial (range based) response size.
+      Also this is the length of the HTTP content, which may differ from the size of the data stream.
+  */
+  virtual void set_http_content_length(int64_t) = 0;
+
   /** Get the range spec for the response (request ranges modifed by content length).
+      @internal Need better comment - this is the range spec used for a response from ATS to the user agent
+      from cached data. Even better we have potentially 2 response ranges - that from the origin server to
+      ATS and that from ATS to the user agent which are only somewhat similar, depending on what exactly
+      is in the cache at the moment.
    */
   virtual HTTPRangeSpec& get_http_range_spec() = 0;
 

@@ -247,20 +247,15 @@ void dir_clean_range_interimvol(off_t start, off_t end, InterimCacheVol *svol);
 #define dir_prev(_e) (_e)->w[2]
 #define dir_set_prev(_e,_o) (_e)->w[2] = (uint16_t)(_o)
 
-// INKqa11166 - Cache can not store 2 HTTP alternates simultaneously.
-// To allow this, move the vector from the CacheVC to the OpenDirEntry.
-// Each CacheVC now maintains a pointer to this vector. Adding/Deleting
-// alternates from this vector is done under the Vol::lock. The alternate
-// is deleted/inserted into the vector just before writing the vector disk
-// (CacheVC::updateVector).
-LINK_FORWARD_DECLARATION(CacheVC, opendir_link) // forward declaration
 struct OpenDirEntry
 {
-  DLL<CacheVC, Link_CacheVC_opendir_link> writers;       // list of all the current writers
-  DLL<CacheVC, Link_CacheVC_opendir_link> readers;         // list of all the current readers - not used
-  CacheHTTPInfoVector vector;   // Vector for the http document. Each writer
-                                // maintains a pointer to this vector and
-                                // writes it down to disk.
+  typedef OpenDirEntry self; ///< Self reference type.
+
+  Ptr<ProxyMutex> mutex;
+
+  /// Vector for the http document. Each writer maintains a pointer to this vector and writes it down to disk.
+  CacheHTTPInfoVector vector;
+  CacheKey first_key;           ///< Key for first doc for this object.
   CacheKey single_doc_key;      // Key for the resident alternate.
   Dir single_doc_dir;           // Directory for the resident alternate
   Dir first_dir;                // Dir for the vector. If empty, a new dir is
@@ -274,17 +269,34 @@ struct OpenDirEntry
 
   LINK(OpenDirEntry, link);
 
-  int wait(CacheVC *c, int msec);
+  //  int wait(CacheVC *c, int msec);
 
   bool has_multiple_writers()
   {
     return num_writers > 1;
   }
+
+  /// Get the alternate index for the @a key.
+  int index_of(CacheKey const& key);
+  /// Mark a @c CacheVC as actively writing at @a offset on the alternate with @a alt_key.
+  self& write_active(CacheKey const& alt_key, CacheVC* vc, int64_t offset);
+  /// Mark an active write by @a vc as complete and indicate whether it had @a success.
+  /// If the write is not @a success then the fragment is not marked as cached.
+  self& write_complete(CacheKey const& alt_key, CacheVC* vc, bool success = true);
+  /// Indicate if a VC is currently writing to the fragment with this @a offset.
+  bool is_write_active(CacheKey const& alt_key, int64_t offset);
+  /// Get the fragment key for a specific @a offset.
+  CacheKey const& key_for(CacheKey const& alt_key, int64_t offset);
+  /** Wait for a fragment to be written.
+   */
+  self& waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t offset);
 };
 
 struct OpenDir: public Continuation
 {
-  Queue<CacheVC, Link_CacheVC_opendir_link> delayed_readers;
+  typedef Queue<CacheVC, Link_CacheVC_OpenDir_Link> CacheVCQ;
+  CacheVCQ delayed_readers;
+
   DLL<OpenDirEntry> bucket[OPEN_DIR_BUCKETS];
 
   int open_write(CacheVC *c, int allow_if_writers, int max_writers);
