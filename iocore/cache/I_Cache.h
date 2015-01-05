@@ -256,6 +256,10 @@ struct CacheVConnection:public VConnection
 
   /// Check if this is HTTP partial content (range request/response).
   virtual bool is_http_partial_content() = 0;
+  /// Get the ranges that are requested but not cached.
+  /// @return @c true if there is any uncached data in the request, @c false if it is all in cache.
+  virtual bool get_uncached(HTTPRangeSpec& r) = 0;
+
 #endif
 
   virtual bool is_ram_cache_hit() const = 0;

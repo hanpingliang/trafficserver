@@ -490,6 +490,12 @@ bool CacheVC::set_pin_in_cache(time_t time_pin)
   return true;
 }
 
+bool
+CacheVC::get_uncached(HTTPRangeSpec& r)
+{
+  return write_vector->get_uncached_range(earliest_key, resp_range.getRangeSpec(), r);
+}
+
 bool CacheVC::set_disk_io_priority(int priority)
 {
 

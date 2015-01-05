@@ -1347,6 +1347,7 @@ public:
   static void build_response_copy(State* s, HTTPHdr* base_response, HTTPHdr* outgoing_response, HTTPVersion outgoing_version);
   static void handle_content_length_header(State* s, HTTPHdr* header, HTTPHdr* base);
   static void change_response_header_because_of_range_request(State* s, HTTPHdr* header);
+  static void handle_request_range_header(State* s, HTTPHdr* header, HTTPRangeSpec const* ranges);
 
   static void handle_request_keep_alive_headers(State *s, HTTPVersion ver, HTTPHdr *heads);
   static void handle_response_keep_alive_headers(State *s, HTTPVersion ver, HTTPHdr *heads);

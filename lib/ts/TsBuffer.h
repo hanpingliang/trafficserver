@@ -298,6 +298,7 @@ namespace ts {
     /** Remove initial instances of @a c.
 
 	@return @c true if not all characters were skipped, @c false if all characters matched @a c.
+	@see trim
     */
     bool skip(char c);
 
@@ -311,6 +312,24 @@ namespace ts {
       typename BOOL_EQUIV ///< Type that can be automatically converted to bool
     >
     bool skip(BOOL_EQUIV (*predicate)(char));
+
+    /** Remove trailing instances of @a c.
+
+	@return @c true if not all characters were trimmed, @c false if all characters matched @a c.
+	@see @c skip
+    */
+    bool trim(char c);
+
+    /** Remove trailing characters that satisfy a @a predicate.
+	@return @c true if not all characters were trimmed, @c false if all characters matched the @a predicate.
+
+	@internal We template this because the @c ParseRules predicates (which are the usual suspects)
+	return an integral type that is not @c bool.
+    */
+    template <
+      typename BOOL_EQUIV ///< Type that can be automatically converted to bool
+    >
+    bool trim(BOOL_EQUIV (*predicate)(char));
   };
 
   // ----------------------------------------------------------
@@ -413,6 +432,7 @@ namespace ts {
     }
     return *this;
   }
+
   template < typename BOOL_EQUIV >
   inline bool ConstBuffer::skip(BOOL_EQUIV (*predicate)(char))
   {
@@ -422,6 +442,23 @@ namespace ts {
   inline bool ConstBuffer::skip(char c)
   {
     while (*this && c == **this) ++*this;
+    return *this;
+  }
+
+  template < typename BOOL_EQUIV >
+  inline bool ConstBuffer::trim(BOOL_EQUIV (*predicate)(char))
+  {
+    if (NULL != _ptr) {
+      while (_size && predicate(_ptr[_size-1])) --_size;
+    }
+    return *this;
+  }
+  inline bool ConstBuffer::trim(char c)
+  {
+    if (NULL != _ptr) {
+      while (_size && c == _ptr[_size-1] ) --_size;
+    }
+      
     return *this;
   }
 

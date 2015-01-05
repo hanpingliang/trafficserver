@@ -1754,7 +1754,7 @@ HttpTransact::OSDNSLookup(State* s)
       } else if (s->cache_lookup_result == CACHE_LOOKUP_HIT_FRESH ||
                  s->cache_lookup_result == CACHE_LOOKUP_HIT_WARNING ||
                  s->cache_lookup_result == CACHE_LOOKUP_HIT_STALE) {
-        //DNS lookup is done if the content is state need to call handle cache open read hit
+        //DNS lookup is done if the content is stale need to call handle cache open read hit
         TRANSACT_RETURN(SM_ACTION_API_OS_DNS, HandleCacheOpenReadHit);
       } else if (s->cache_lookup_result == CACHE_LOOKUP_MISS || s->cache_info.action == CACHE_DO_NO_ACTION) {
         TRANSACT_RETURN(SM_ACTION_API_OS_DNS, HandleCacheOpenReadMiss);
@@ -2500,6 +2500,7 @@ HttpTransact::HandleCacheOpenReadHit(State* s)
   bool needs_cache_auth = false;
   bool server_up = true;
   CacheHTTPInfo *obj;
+  HTTPRangeSpec range;
 
   if (s->api_update_cached_object == HttpTransact::UPDATE_CACHED_OBJECT_CONTINUE) {
     obj = &s->cache_info.object_store;
@@ -2672,6 +2673,18 @@ HttpTransact::HandleCacheOpenReadHit(State* s)
       SET_VIA_STRING(VIA_DETAIL_CACHE_TYPE, VIA_DETAIL_CACHE);
     }
   }
+
+  // Check if it's a range request and we need to get some data from the origin.
+  if (s->state_machine->get_cache_sm().cache_read_vc->get_uncached(range)) {
+    build_request(s, &s->hdr_info.client_request, &s->hdr_info.server_request, s->current.server->http_version);
+    handle_request_range_header(s, &s->hdr_info.server_request, &range);
+    s->next_action = how_to_open_connection(s);
+    if (s->stale_icp_lookup && s->next_action == SM_ACTION_ORIGIN_SERVER_OPEN) {
+      s->next_action = SM_ACTION_ICP_QUERY;
+    }
+    return;
+  }
+
   // cache hit, document is fresh, does not authorization,
   // is valid, etc. etc. send it back to the client.
   //
@@ -4030,6 +4043,7 @@ HttpTransact::handle_cache_operation_on_forward_server_response(State* s)
   HTTPStatus client_response_code = HTTP_STATUS_NONE;
   const char *warn_text = NULL;
   bool cacheable = false;
+  HTTPRangeSpec ranges;
 
   cacheable = is_response_cacheable(s, &s->hdr_info.client_request, &s->hdr_info.server_response);
   DebugTxn("http_trans", "[hcoofsr] response %s cacheable", cacheable ? "is" : "is not");
@@ -6566,6 +6580,16 @@ HttpTransact::will_this_request_self_loop(State* s)
   }
   s->request_will_not_selfloop = true;
   return false;
+}
+
+void
+HttpTransact::handle_request_range_header(State*, HTTPHdr* header, HTTPRangeSpec const* ranges)
+{
+  int n;
+  char buff[1024];
+
+  n = ranges->print(buff, sizeof(buff));
+  header->value_set(MIME_FIELD_RANGE, MIME_LEN_RANGE, buff, n);
 }
 
 /*

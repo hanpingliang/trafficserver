@@ -2424,6 +2424,8 @@ HttpSM::state_icp_lookup(int event, void *data)
 int
 HttpSM::state_cache_open_write(int event, void *data)
 {
+  MIMEField* field;
+
   STATE_ENTER(&HttpSM:state_cache_open_write, event);
   milestones.cache_open_write_end = ink_get_hrtime();
   pending_action = NULL;
@@ -2434,6 +2436,13 @@ HttpSM::state_cache_open_write(int event, void *data)
     // OPEN WRITE is successful //
     //////////////////////////////
     t_state.cache_info.write_lock_state = HttpTransact::CACHE_WL_SUCCESS;
+    if (NULL != (field = t_state.hdr_info.server_response.field_find(MIME_FIELD_CONTENT_RANGE, MIME_LEN_CONTENT_RANGE))) {
+      int len;
+      char const* cr = field->value_get(&len);
+      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parse(cr, len);
+      cache_sm.cache_write_vc->set_http_content_length(cl);
+      
+    }
     break;
 
   case CACHE_EVENT_OPEN_WRITE_FAILED:
@@ -2533,10 +2542,6 @@ HttpSM::state_cache_open_read(int event, void *data)
 
       cache_sm.cache_read_vc->get_http_info(&t_state.cache_info.object_read);
       t_state.cache_info.is_ram_cache_hit = (cache_sm.cache_read_vc)->is_ram_cache_hit();
-
-      // Check if it's all there or we have to arrange for a cache write to fill in the
-      // missing bits.
-      t_state.cache_info.object_read->get_missing_ranges(cache_sm.cache_read_vc->get_http_range_spec(), range);
 
       ink_assert(t_state.cache_info.object_read != 0);
       call_transact_and_set_next_state(HttpTransact::HandleCacheOpenRead);

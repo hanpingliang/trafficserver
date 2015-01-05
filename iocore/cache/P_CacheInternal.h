@@ -381,6 +381,7 @@ struct CacheVC: public CacheVConnection
   virtual void set_http_content_length(int64_t size);
   virtual HTTPRangeSpec& get_http_range_spec();
   virtual bool is_http_partial_content();
+  virtual bool get_uncached(HTTPRangeSpec& r);
 
 #endif
 

@@ -1,25 +1,25 @@
 /** @file
 
-  A brief file description
+    A brief file description
 
-  @section license License
+    @section license License
 
-  Licensed to the Apache Software Foundation (ASF) under one
-  or more contributor license agreements.  See the NOTICE file
-  distributed with this work for additional information
-  regarding copyright ownership.  The ASF licenses this file
-  to you under the Apache License, Version 2.0 (the
-  "License"); you may not use this file except in compliance
-  with the License.  You may obtain a copy of the License at
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
 
-      http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
- */
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+*/
 
 #ifndef __HTTP_H__
 #define __HTTP_H__
@@ -41,203 +41,203 @@ class Http2HeaderTable;
 class MIOBuffer;
 
 enum HTTPStatus
-{
-  HTTP_STATUS_NONE = 0,
+  {
+    HTTP_STATUS_NONE = 0,
 
-  HTTP_STATUS_CONTINUE = 100,
-  HTTP_STATUS_SWITCHING_PROTOCOL = 101,
+    HTTP_STATUS_CONTINUE = 100,
+    HTTP_STATUS_SWITCHING_PROTOCOL = 101,
 
-  HTTP_STATUS_OK = 200,
-  HTTP_STATUS_CREATED = 201,
-  HTTP_STATUS_ACCEPTED = 202,
-  HTTP_STATUS_NON_AUTHORITATIVE_INFORMATION = 203,
-  HTTP_STATUS_NO_CONTENT = 204,
-  HTTP_STATUS_RESET_CONTENT = 205,
-  HTTP_STATUS_PARTIAL_CONTENT = 206,
+    HTTP_STATUS_OK = 200,
+    HTTP_STATUS_CREATED = 201,
+    HTTP_STATUS_ACCEPTED = 202,
+    HTTP_STATUS_NON_AUTHORITATIVE_INFORMATION = 203,
+    HTTP_STATUS_NO_CONTENT = 204,
+    HTTP_STATUS_RESET_CONTENT = 205,
+    HTTP_STATUS_PARTIAL_CONTENT = 206,
 
-  HTTP_STATUS_MULTIPLE_CHOICES = 300,
-  HTTP_STATUS_MOVED_PERMANENTLY = 301,
-  HTTP_STATUS_MOVED_TEMPORARILY = 302,
-  HTTP_STATUS_SEE_OTHER = 303,
-  HTTP_STATUS_NOT_MODIFIED = 304,
-  HTTP_STATUS_USE_PROXY = 305,
-  HTTP_STATUS_TEMPORARY_REDIRECT = 307,
+    HTTP_STATUS_MULTIPLE_CHOICES = 300,
+    HTTP_STATUS_MOVED_PERMANENTLY = 301,
+    HTTP_STATUS_MOVED_TEMPORARILY = 302,
+    HTTP_STATUS_SEE_OTHER = 303,
+    HTTP_STATUS_NOT_MODIFIED = 304,
+    HTTP_STATUS_USE_PROXY = 305,
+    HTTP_STATUS_TEMPORARY_REDIRECT = 307,
 
-  HTTP_STATUS_BAD_REQUEST = 400,
-  HTTP_STATUS_UNAUTHORIZED = 401,
-  HTTP_STATUS_PAYMENT_REQUIRED = 402,
-  HTTP_STATUS_FORBIDDEN = 403,
-  HTTP_STATUS_NOT_FOUND = 404,
-  HTTP_STATUS_METHOD_NOT_ALLOWED = 405,
-  HTTP_STATUS_NOT_ACCEPTABLE = 406,
-  HTTP_STATUS_PROXY_AUTHENTICATION_REQUIRED = 407,
-  HTTP_STATUS_REQUEST_TIMEOUT = 408,
-  HTTP_STATUS_CONFLICT = 409,
-  HTTP_STATUS_GONE = 410,
-  HTTP_STATUS_LENGTH_REQUIRED = 411,
-  HTTP_STATUS_PRECONDITION_FAILED = 412,
-  HTTP_STATUS_REQUEST_ENTITY_TOO_LARGE = 413,
-  HTTP_STATUS_REQUEST_URI_TOO_LONG = 414,
-  HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE = 415,
-  HTTP_STATUS_RANGE_NOT_SATISFIABLE = 416,
+    HTTP_STATUS_BAD_REQUEST = 400,
+    HTTP_STATUS_UNAUTHORIZED = 401,
+    HTTP_STATUS_PAYMENT_REQUIRED = 402,
+    HTTP_STATUS_FORBIDDEN = 403,
+    HTTP_STATUS_NOT_FOUND = 404,
+    HTTP_STATUS_METHOD_NOT_ALLOWED = 405,
+    HTTP_STATUS_NOT_ACCEPTABLE = 406,
+    HTTP_STATUS_PROXY_AUTHENTICATION_REQUIRED = 407,
+    HTTP_STATUS_REQUEST_TIMEOUT = 408,
+    HTTP_STATUS_CONFLICT = 409,
+    HTTP_STATUS_GONE = 410,
+    HTTP_STATUS_LENGTH_REQUIRED = 411,
+    HTTP_STATUS_PRECONDITION_FAILED = 412,
+    HTTP_STATUS_REQUEST_ENTITY_TOO_LARGE = 413,
+    HTTP_STATUS_REQUEST_URI_TOO_LONG = 414,
+    HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE = 415,
+    HTTP_STATUS_RANGE_NOT_SATISFIABLE = 416,
 
-  HTTP_STATUS_INTERNAL_SERVER_ERROR = 500,
-  HTTP_STATUS_NOT_IMPLEMENTED = 501,
-  HTTP_STATUS_BAD_GATEWAY = 502,
-  HTTP_STATUS_SERVICE_UNAVAILABLE = 503,
-  HTTP_STATUS_GATEWAY_TIMEOUT = 504,
-  HTTP_STATUS_HTTPVER_NOT_SUPPORTED = 505
-};
+    HTTP_STATUS_INTERNAL_SERVER_ERROR = 500,
+    HTTP_STATUS_NOT_IMPLEMENTED = 501,
+    HTTP_STATUS_BAD_GATEWAY = 502,
+    HTTP_STATUS_SERVICE_UNAVAILABLE = 503,
+    HTTP_STATUS_GATEWAY_TIMEOUT = 504,
+    HTTP_STATUS_HTTPVER_NOT_SUPPORTED = 505
+  };
 
 enum HTTPKeepAlive
-{
-  HTTP_KEEPALIVE_UNDEFINED = 0,
-  HTTP_NO_KEEPALIVE,
-  HTTP_KEEPALIVE
-};
+  {
+    HTTP_KEEPALIVE_UNDEFINED = 0,
+    HTTP_NO_KEEPALIVE,
+    HTTP_KEEPALIVE
+  };
 
 enum HTTPWarningCode
-{
-  HTTP_WARNING_CODE_NONE = 0,
+  {
+    HTTP_WARNING_CODE_NONE = 0,
 
-  HTTP_WARNING_CODE_RESPONSE_STALE = 110,
-  HTTP_WARNING_CODE_REVALIDATION_FAILED = 111,
-  HTTP_WARNING_CODE_DISCONNECTED_OPERATION = 112,
-  HTTP_WARNING_CODE_HERUISTIC_EXPIRATION = 113,
-  HTTP_WARNING_CODE_TRANSFORMATION_APPLIED = 114,
-  HTTP_WARNING_CODE_MISC_WARNING = 199
-};
+    HTTP_WARNING_CODE_RESPONSE_STALE = 110,
+    HTTP_WARNING_CODE_REVALIDATION_FAILED = 111,
+    HTTP_WARNING_CODE_DISCONNECTED_OPERATION = 112,
+    HTTP_WARNING_CODE_HERUISTIC_EXPIRATION = 113,
+    HTTP_WARNING_CODE_TRANSFORMATION_APPLIED = 114,
+    HTTP_WARNING_CODE_MISC_WARNING = 199
+  };
 
 /* squild log codes */
 enum SquidLogCode
-{
-  SQUID_LOG_EMPTY = '0',
-  SQUID_LOG_TCP_HIT = '1',
-  SQUID_LOG_TCP_DISK_HIT = '2',
-  SQUID_LOG_TCP_MEM_HIT = '.',  // Don't want to change others codes
-  SQUID_LOG_TCP_MISS = '3',
-  SQUID_LOG_TCP_EXPIRED_MISS = '4',
-  SQUID_LOG_TCP_REFRESH_HIT = '5',
-  SQUID_LOG_TCP_REF_FAIL_HIT = '6',
-  SQUID_LOG_TCP_REFRESH_MISS = '7',
-  SQUID_LOG_TCP_CLIENT_REFRESH = '8',
-  SQUID_LOG_TCP_IMS_HIT = '9',
-  SQUID_LOG_TCP_IMS_MISS = 'a',
-  SQUID_LOG_TCP_SWAPFAIL = 'b',
-  SQUID_LOG_TCP_DENIED = 'c',
-  SQUID_LOG_TCP_WEBFETCH_MISS = 'd',
-  SQUID_LOG_TCP_FUTURE_2 = 'f',
-  SQUID_LOG_TCP_HIT_REDIRECT = '[',       // standard redirect
-  SQUID_LOG_TCP_MISS_REDIRECT = ']',      // standard redirect
-  SQUID_LOG_TCP_HIT_X_REDIRECT = '<',     // extended redirect
-  SQUID_LOG_TCP_MISS_X_REDIRECT = '>',    // extended redirect
-  SQUID_LOG_UDP_HIT = 'g',
-  SQUID_LOG_UDP_WEAK_HIT = 'h',
-  SQUID_LOG_UDP_HIT_OBJ = 'i',
-  SQUID_LOG_UDP_MISS = 'j',
-  SQUID_LOG_UDP_DENIED = 'k',
-  SQUID_LOG_UDP_INVALID = 'l',
-  SQUID_LOG_UDP_RELOADING = 'm',
-  SQUID_LOG_UDP_FUTURE_1 = 'n',
-  SQUID_LOG_UDP_FUTURE_2 = 'o',
-  SQUID_LOG_ERR_READ_TIMEOUT = 'p',
-  SQUID_LOG_ERR_LIFETIME_EXP = 'q',
-  SQUID_LOG_ERR_NO_CLIENTS_BIG_OBJ = 'r',
-  SQUID_LOG_ERR_READ_ERROR = 's',
-  SQUID_LOG_ERR_CLIENT_ABORT = 't',
-  SQUID_LOG_ERR_CONNECT_FAIL = 'u',
-  SQUID_LOG_ERR_INVALID_REQ = 'v',
-  SQUID_LOG_ERR_UNSUP_REQ = 'w',
-  SQUID_LOG_ERR_INVALID_URL = 'x',
-  SQUID_LOG_ERR_NO_FDS = 'y',
-  SQUID_LOG_ERR_DNS_FAIL = 'z',
-  SQUID_LOG_ERR_NOT_IMPLEMENTED = 'A',
-  SQUID_LOG_ERR_CANNOT_FETCH = 'B',
-  SQUID_LOG_ERR_NO_RELAY = 'C',
-  SQUID_LOG_ERR_DISK_IO = 'D',
-  SQUID_LOG_ERR_ZERO_SIZE_OBJECT = 'E',
-  SQUID_LOG_ERR_PROXY_DENIED = 'G',
-  SQUID_LOG_ERR_WEBFETCH_DETECTED = 'H',
-  SQUID_LOG_ERR_FUTURE_1 = 'I',
-  SQUID_LOG_ERR_UNKNOWN = 'Z'
-};
+  {
+    SQUID_LOG_EMPTY = '0',
+    SQUID_LOG_TCP_HIT = '1',
+    SQUID_LOG_TCP_DISK_HIT = '2',
+    SQUID_LOG_TCP_MEM_HIT = '.',  // Don't want to change others codes
+    SQUID_LOG_TCP_MISS = '3',
+    SQUID_LOG_TCP_EXPIRED_MISS = '4',
+    SQUID_LOG_TCP_REFRESH_HIT = '5',
+    SQUID_LOG_TCP_REF_FAIL_HIT = '6',
+    SQUID_LOG_TCP_REFRESH_MISS = '7',
+    SQUID_LOG_TCP_CLIENT_REFRESH = '8',
+    SQUID_LOG_TCP_IMS_HIT = '9',
+    SQUID_LOG_TCP_IMS_MISS = 'a',
+    SQUID_LOG_TCP_SWAPFAIL = 'b',
+    SQUID_LOG_TCP_DENIED = 'c',
+    SQUID_LOG_TCP_WEBFETCH_MISS = 'd',
+    SQUID_LOG_TCP_FUTURE_2 = 'f',
+    SQUID_LOG_TCP_HIT_REDIRECT = '[',       // standard redirect
+    SQUID_LOG_TCP_MISS_REDIRECT = ']',      // standard redirect
+    SQUID_LOG_TCP_HIT_X_REDIRECT = '<',     // extended redirect
+    SQUID_LOG_TCP_MISS_X_REDIRECT = '>',    // extended redirect
+    SQUID_LOG_UDP_HIT = 'g',
+    SQUID_LOG_UDP_WEAK_HIT = 'h',
+    SQUID_LOG_UDP_HIT_OBJ = 'i',
+    SQUID_LOG_UDP_MISS = 'j',
+    SQUID_LOG_UDP_DENIED = 'k',
+    SQUID_LOG_UDP_INVALID = 'l',
+    SQUID_LOG_UDP_RELOADING = 'm',
+    SQUID_LOG_UDP_FUTURE_1 = 'n',
+    SQUID_LOG_UDP_FUTURE_2 = 'o',
+    SQUID_LOG_ERR_READ_TIMEOUT = 'p',
+    SQUID_LOG_ERR_LIFETIME_EXP = 'q',
+    SQUID_LOG_ERR_NO_CLIENTS_BIG_OBJ = 'r',
+    SQUID_LOG_ERR_READ_ERROR = 's',
+    SQUID_LOG_ERR_CLIENT_ABORT = 't',
+    SQUID_LOG_ERR_CONNECT_FAIL = 'u',
+    SQUID_LOG_ERR_INVALID_REQ = 'v',
+    SQUID_LOG_ERR_UNSUP_REQ = 'w',
+    SQUID_LOG_ERR_INVALID_URL = 'x',
+    SQUID_LOG_ERR_NO_FDS = 'y',
+    SQUID_LOG_ERR_DNS_FAIL = 'z',
+    SQUID_LOG_ERR_NOT_IMPLEMENTED = 'A',
+    SQUID_LOG_ERR_CANNOT_FETCH = 'B',
+    SQUID_LOG_ERR_NO_RELAY = 'C',
+    SQUID_LOG_ERR_DISK_IO = 'D',
+    SQUID_LOG_ERR_ZERO_SIZE_OBJECT = 'E',
+    SQUID_LOG_ERR_PROXY_DENIED = 'G',
+    SQUID_LOG_ERR_WEBFETCH_DETECTED = 'H',
+    SQUID_LOG_ERR_FUTURE_1 = 'I',
+    SQUID_LOG_ERR_UNKNOWN = 'Z'
+  };
 
 /* squid hieratchy codes */
 enum SquidHierarchyCode
-{
-  SQUID_HIER_EMPTY = '0',
-  SQUID_HIER_NONE = '1',
-  SQUID_HIER_DIRECT = '2',
-  SQUID_HIER_SIBLING_HIT = '3',
-  SQUID_HIER_PARENT_HIT = '4',
-  SQUID_HIER_DEFAULT_PARENT = '5',
-  SQUID_HIER_SINGLE_PARENT = '6',
-  SQUID_HIER_FIRST_UP_PARENT = '7',
-  SQUID_HIER_NO_PARENT_DIRECT = '8',
-  SQUID_HIER_FIRST_PARENT_MISS = '9',
-  SQUID_HIER_LOCAL_IP_DIRECT = 'a',
-  SQUID_HIER_FIREWALL_IP_DIRECT = 'b',
-  SQUID_HIER_NO_DIRECT_FAIL = 'c',
-  SQUID_HIER_SOURCE_FASTEST = 'd',
-  SQUID_HIER_SIBLING_UDP_HIT_OBJ = 'e',
-  SQUID_HIER_PARENT_UDP_HIT_OBJ = 'f',
-  SQUID_HIER_PASSTHROUGH_PARENT = 'g',
-  SQUID_HIER_SSL_PARENT_MISS = 'h',
-  SQUID_HIER_INVALID_CODE = 'i',
-  SQUID_HIER_TIMEOUT_DIRECT = 'j',
-  SQUID_HIER_TIMEOUT_SIBLING_HIT = 'k',
-  SQUID_HIER_TIMEOUT_PARENT_HIT = 'l',
-  SQUID_HIER_TIMEOUT_DEFAULT_PARENT = 'm',
-  SQUID_HIER_TIMEOUT_SINGLE_PARENT = 'n',
-  SQUID_HIER_TIMEOUT_FIRST_UP_PARENT = 'o',
-  SQUID_HIER_TIMEOUT_NO_PARENT_DIRECT = 'p',
-  SQUID_HIER_TIMEOUT_FIRST_PARENT_MISS = 'q',
-  SQUID_HIER_TIMEOUT_LOCAL_IP_DIRECT = 'r',
-  SQUID_HIER_TIMEOUT_FIREWALL_IP_DIRECT = 's',
-  SQUID_HIER_TIMEOUT_NO_DIRECT_FAIL = 't',
-  SQUID_HIER_TIMEOUT_SOURCE_FASTEST = 'u',
-  SQUID_HIER_TIMEOUT_SIBLING_UDP_HIT_OBJ = 'v',
-  SQUID_HIER_TIMEOUT_PARENT_UDP_HIT_OBJ = 'w',
-  SQUID_HIER_TIMEOUT_PASSTHROUGH_PARENT = 'x',
-  SQUID_HIER_TIMEOUT_TIMEOUT_SSL_PARENT_MISS = 'y',
-  SQUID_HIER_INVALID_ASSIGNED_CODE = 'z'
-};
+  {
+    SQUID_HIER_EMPTY = '0',
+    SQUID_HIER_NONE = '1',
+    SQUID_HIER_DIRECT = '2',
+    SQUID_HIER_SIBLING_HIT = '3',
+    SQUID_HIER_PARENT_HIT = '4',
+    SQUID_HIER_DEFAULT_PARENT = '5',
+    SQUID_HIER_SINGLE_PARENT = '6',
+    SQUID_HIER_FIRST_UP_PARENT = '7',
+    SQUID_HIER_NO_PARENT_DIRECT = '8',
+    SQUID_HIER_FIRST_PARENT_MISS = '9',
+    SQUID_HIER_LOCAL_IP_DIRECT = 'a',
+    SQUID_HIER_FIREWALL_IP_DIRECT = 'b',
+    SQUID_HIER_NO_DIRECT_FAIL = 'c',
+    SQUID_HIER_SOURCE_FASTEST = 'd',
+    SQUID_HIER_SIBLING_UDP_HIT_OBJ = 'e',
+    SQUID_HIER_PARENT_UDP_HIT_OBJ = 'f',
+    SQUID_HIER_PASSTHROUGH_PARENT = 'g',
+    SQUID_HIER_SSL_PARENT_MISS = 'h',
+    SQUID_HIER_INVALID_CODE = 'i',
+    SQUID_HIER_TIMEOUT_DIRECT = 'j',
+    SQUID_HIER_TIMEOUT_SIBLING_HIT = 'k',
+    SQUID_HIER_TIMEOUT_PARENT_HIT = 'l',
+    SQUID_HIER_TIMEOUT_DEFAULT_PARENT = 'm',
+    SQUID_HIER_TIMEOUT_SINGLE_PARENT = 'n',
+    SQUID_HIER_TIMEOUT_FIRST_UP_PARENT = 'o',
+    SQUID_HIER_TIMEOUT_NO_PARENT_DIRECT = 'p',
+    SQUID_HIER_TIMEOUT_FIRST_PARENT_MISS = 'q',
+    SQUID_HIER_TIMEOUT_LOCAL_IP_DIRECT = 'r',
+    SQUID_HIER_TIMEOUT_FIREWALL_IP_DIRECT = 's',
+    SQUID_HIER_TIMEOUT_NO_DIRECT_FAIL = 't',
+    SQUID_HIER_TIMEOUT_SOURCE_FASTEST = 'u',
+    SQUID_HIER_TIMEOUT_SIBLING_UDP_HIT_OBJ = 'v',
+    SQUID_HIER_TIMEOUT_PARENT_UDP_HIT_OBJ = 'w',
+    SQUID_HIER_TIMEOUT_PASSTHROUGH_PARENT = 'x',
+    SQUID_HIER_TIMEOUT_TIMEOUT_SSL_PARENT_MISS = 'y',
+    SQUID_HIER_INVALID_ASSIGNED_CODE = 'z'
+  };
 
 /* squid hit/miss codes */
 enum SquidHitMissCode
-{
-  SQUID_HIT_RESERVED = '0',
-  SQUID_HIT_LEVEL_1 = '1',
-  SQUID_HIT_LEVEL_2 = '2',
-  SQUID_HIT_LEVEL_3 = '3',
-  SQUID_HIT_LEVEL_4 = '4',
-  SQUID_HIT_LEVEL_5 = '5',
-  SQUID_HIT_LEVEL_6 = '6',
-  SQUID_HIT_LEVEL_7 = '7',
-  SQUID_HIT_LEVEL_8 = '8',
-  SQUID_HIT_LEVEl_9 = '9',
-  SQUID_MISS_NONE = '1',
-  SQUID_MISS_ICP_AUTH = '2',
-  SQUID_MISS_HTTP_NON_CACHE = '3',
-  SQUID_MISS_ICP_STOPLIST = '4',
-  SQUID_MISS_HTTP_NO_DLE = '5',
-  SQUID_MISS_HTTP_NO_LE = '6',
-  SQUID_MISS_HTTP_CONTENT = '7',
-  SQUID_MISS_PRAGMA_NOCACHE = '8',
-  SQUID_MISS_PASS = '9',
-  SQUID_MISS_PRE_EXPIRED = 'a',
-  SQUID_MISS_ERROR = 'b',
-  SQUID_MISS_CACHE_BYPASS = 'c',
-  SQUID_HIT_MISS_INVALID_ASSIGNED_CODE = 'z'
-};
+  {
+    SQUID_HIT_RESERVED = '0',
+    SQUID_HIT_LEVEL_1 = '1',
+    SQUID_HIT_LEVEL_2 = '2',
+    SQUID_HIT_LEVEL_3 = '3',
+    SQUID_HIT_LEVEL_4 = '4',
+    SQUID_HIT_LEVEL_5 = '5',
+    SQUID_HIT_LEVEL_6 = '6',
+    SQUID_HIT_LEVEL_7 = '7',
+    SQUID_HIT_LEVEL_8 = '8',
+    SQUID_HIT_LEVEl_9 = '9',
+    SQUID_MISS_NONE = '1',
+    SQUID_MISS_ICP_AUTH = '2',
+    SQUID_MISS_HTTP_NON_CACHE = '3',
+    SQUID_MISS_ICP_STOPLIST = '4',
+    SQUID_MISS_HTTP_NO_DLE = '5',
+    SQUID_MISS_HTTP_NO_LE = '6',
+    SQUID_MISS_HTTP_CONTENT = '7',
+    SQUID_MISS_PRAGMA_NOCACHE = '8',
+    SQUID_MISS_PASS = '9',
+    SQUID_MISS_PRE_EXPIRED = 'a',
+    SQUID_MISS_ERROR = 'b',
+    SQUID_MISS_CACHE_BYPASS = 'c',
+    SQUID_HIT_MISS_INVALID_ASSIGNED_CODE = 'z'
+  };
 
 
 enum HTTPType
-{
-  HTTP_TYPE_UNKNOWN,
-  HTTP_TYPE_REQUEST,
-  HTTP_TYPE_RESPONSE
-};
+  {
+    HTTP_TYPE_UNKNOWN,
+    HTTP_TYPE_REQUEST,
+    HTTP_TYPE_RESPONSE
+  };
 
 struct HTTPHdrImpl:public HdrHeapObjImpl
 {
@@ -483,20 +483,20 @@ int32_t http_parse_version(const char *start, const char *end);
 
 
 /*
-HTTPValAccept*         http_parse_accept (const char *buf, Arena *arena);
-HTTPValAcceptCharset*  http_parse_accept_charset (const char *buf, Arena *arena);
-HTTPValAcceptEncoding* http_parse_accept_encoding (const char *buf, Arena *arena);
-HTTPValAcceptLanguage* http_parse_accept_language (const char *buf, Arena *arena);
-HTTPValCacheControl*   http_parse_cache_control (const char *buf, Arena *arena);
-const char*            http_parse_cache_directive (const char **buf);
-HTTPValRange*          http_parse_range (const char *buf, Arena *arena);
+  HTTPValAccept*         http_parse_accept (const char *buf, Arena *arena);
+  HTTPValAcceptCharset*  http_parse_accept_charset (const char *buf, Arena *arena);
+  HTTPValAcceptEncoding* http_parse_accept_encoding (const char *buf, Arena *arena);
+  HTTPValAcceptLanguage* http_parse_accept_language (const char *buf, Arena *arena);
+  HTTPValCacheControl*   http_parse_cache_control (const char *buf, Arena *arena);
+  const char*            http_parse_cache_directive (const char **buf);
+  HTTPValRange*          http_parse_range (const char *buf, Arena *arena);
 */
 HTTPValTE *http_parse_te(const char *buf, int len, Arena *arena);
 
 
 class HTTPVersion
 {
-public:
+ public:
   HTTPVersion();
   explicit HTTPVersion(int32_t version);
   HTTPVersion(int ver_major, int ver_minor);
@@ -512,8 +512,8 @@ public:
   int operator >=(const HTTPVersion & hv) const;
   int operator <=(const HTTPVersion & hv) const;
 
-public:
-    int32_t m_version;
+ public:
+  int32_t m_version;
 };
 
 /** A set of content ranges.
@@ -535,9 +535,9 @@ struct HTTPRangeSpec {
     uint64_t _max;
 
     /// Default constructor - invalid range.
-    Range() : _min(UINT64_MAX), _max(1) { }
+  Range() : _min(UINT64_MAX), _max(1) { }
     /// Construct as the range ( @a low .. @a high )
-    Range(uint64_t low, uint64_t high) : _min(low), _max(high) {}
+  Range(uint64_t low, uint64_t high) : _min(low), _max(high) {}
 
     /// Test if this range is a suffix range.
     bool isSuffix() const;
@@ -547,7 +547,7 @@ struct HTTPRangeSpec {
     uint64_t size() const;
     /** Convert range to absolute values for a content length of @a len.
 
-	@return @c true if the range was valid for @a len, @c false otherwise.
+        @return @c true if the range was valid for @a len, @c false otherwise.
     */
     bool apply(uint64_t len);
 
@@ -590,6 +590,24 @@ struct HTTPRangeSpec {
   */
   bool parse(char const* value, int len);
 
+  /** Parse a Content-Range field.
+
+      @a range is set to the content range. If the content range is unsatisfied the @a range is
+      set to @c UNSATISFIABLE. If there is a parsing error the @a range is set to @c INVALID.
+
+      @note The content length return is ambiguous on its own, the state of @a range must be checked.
+
+      @return The content length, or -1 if there is an error or the content length is indeterminate.
+  */
+  int64_t parseContentRange(char const* v, int len);
+
+  /// Print the range specification.
+  /// @return The number of characters printed.
+  int print(
+             char* buff ///< Output buffer.
+            , size_t len ///< Size of output buffer.
+            ) const;
+
 # if 0
   /** Copy ranges from @a while applying them to the content @a length.
 
@@ -600,7 +618,7 @@ struct HTTPRangeSpec {
       @return @c true if the range spec is satisfiable, @c false otherwise.
       Note a range spec with no ranges is always satisfiable and that suffix ranges are also
       always satisfiable.
-   */
+  */
   bool apply(self const& that, uint64_t length);
 # endif
 
@@ -612,7 +630,7 @@ struct HTTPRangeSpec {
       @return @c true if the range spec is satisfiable (there remains at least one valid range), @c false otherwise.
       Note a range spec with no ranges is always satisfiable and that suffix ranges are also
       always satisfiable.
-   */
+  */
   bool apply(uint64_t length);
 
   /** Number of distinct ranges.
@@ -655,28 +673,28 @@ struct HTTPRangeSpec {
       @return The content length for the ranges including the range separators.
   */
   uint64_t calcContentLength(
-			     uint64_t base_content_size, ///< Content size w/o ranges.
-			     uint64_t ct_val_len ///< Length of Content-Type field value.
-			     ) const;
+                             uint64_t base_content_size, ///< Content size w/o ranges.
+                             uint64_t ct_val_len ///< Length of Content-Type field value.
+                             ) const;
 
   /// Calculate the length of the range part boundary header.
   static uint64_t calcPartBoundarySize(
-				       uint64_t object_size ///< Base content size
-				       , uint64_t ct_val_len ///< Length of the Content-Type value (0 if none).
-				       );
+                                       uint64_t object_size ///< Base content size
+                                       , uint64_t ct_val_len ///< Length of the Content-Type value (0 if none).
+                                       );
 
   /** Write the range part boundary to @a out.
    */
   static uint64_t writePartBoundary(
-				    MIOBuffer* out ///< Output IO Buffer
-				    , char const* boundary_str ///< Boundary marker string.
-				    , size_t boundary_len ///< Length of boundary marker string.
-				    , uint64_t total_size ///< Base content size.
-				    , uint64_t low ///< Low value for the range.
-				    , uint64_t high ///< High value for the raNGE.
-				    , MIMEField* ctf ///< Content-Type field (@c NULL if none)
-				    , bool final ///< Is this the final part boundary?
-				    );
+                                    MIOBuffer* out ///< Output IO Buffer
+                                    , char const* boundary_str ///< Boundary marker string.
+                                    , size_t boundary_len ///< Length of boundary marker string.
+                                    , uint64_t total_size ///< Base content size.
+                                    , uint64_t low ///< Low value for the range.
+                                    , uint64_t high ///< High value for the raNGE.
+                                    , MIMEField* ctf ///< Content-Type field (@c NULL if none)
+                                    , bool final ///< Is this the final part boundary?
+                                    );
 
   /// Iterator for first range.
   iterator begin();
@@ -692,7 +710,7 @@ class IOBufferReader;
 
 class HTTPHdr: public MIMEHdr
 {
-public:
+ public:
   HTTPHdrImpl *m_http;
   // This is all cached data and so is mutable.
   mutable URL m_url_cached;
@@ -744,38 +762,38 @@ public:
       Note that this can be different from getting the @c URL
       and invoking @c URL::string_get if the host is in a header
       field and not explicitly in the URL.
-   */
+  */
   char* url_string_get(
-    Arena* arena = 0, ///< Arena to use, or @c malloc if NULL.
-    int* length = 0 ///< Store string length here.
-  );
+                       Arena* arena = 0, ///< Arena to use, or @c malloc if NULL.
+                       int* length = 0 ///< Store string length here.
+                       );
   /** Get a string with the effective URL in it.
       This is automatically allocated if needed in the request heap.
 
       @see url_string_get
-   */
+  */
   char* url_string_get_ref(
-    int* length = 0 ///< Store string length here.
-  );
+                           int* length = 0 ///< Store string length here.
+                           );
 
   /** Print the URL.
       Output is not null terminated.
       @return 0 on failure, non-zero on success.
-   */
+  */
   int url_print(
-      char* buff, ///< Output buffer
-      int length, ///< Length of @a buffer
-      int* offset, ///< [in,out] ???
-      int* skip ///< [in,out] ???
-  );
+                char* buff, ///< Output buffer
+                int length, ///< Length of @a buffer
+                int* offset, ///< [in,out] ???
+                int* skip ///< [in,out] ???
+                );
 
   /** Get the URL path.
       This is a reference, not allocated.
       @return A pointer to the path or @c NULL if there is no valid URL.
   */
   char const* path_get(
-		       int* length ///< Storage for path length.
-		       );
+                       int* length ///< Storage for path length.
+                       );
 
   /** Get the target host name.
       The length is returned in @a length if non-NULL.
@@ -797,8 +815,8 @@ public:
       @return A pointer to the scheme or @c NULL if there is no valid URL.
   */
   char const* scheme_get(
-		       int* length ///< Storage for path length.
-		       );
+                         int* length ///< Storage for path length.
+                         );
   void url_set(URL *url);
   void url_set_as_server_url(URL *url);
   void url_set(const char *str, int length);
@@ -835,7 +853,7 @@ public:
   MIMEParseResult parse_req(HTTPParser *parser, IOBufferReader *r, int *bytes_used, bool eof);
   MIMEParseResult parse_resp(HTTPParser *parser, IOBufferReader *r, int *bytes_used, bool eof);
 
-public:
+ public:
   // Utility routines
   bool is_cache_control_set(const char *cc_directive_wks);
   bool is_pragma_no_cache_set();
@@ -843,7 +861,7 @@ public:
   HTTPKeepAlive keep_alive_get() const;
 
 
-protected:
+ protected:
   /** Load the target cache.
       @see m_host, m_port, m_target_in_url
   */
@@ -857,7 +875,7 @@ protected:
 
   static Arena* const USE_HDR_HEAP_MAGIC;
 
-private:
+ private:
   // No gratuitous copies!
   HTTPHdr(const HTTPHdr & m);
   HTTPHdr & operator =(const HTTPHdr & m);
@@ -870,7 +888,7 @@ private:
   -------------------------------------------------------------------------*/
 
 inline HTTPVersion::HTTPVersion()
-:m_version(HTTP_VERSION(0, 9))
+                   :m_version(HTTP_VERSION(0, 9))
 {
 }
 
@@ -878,7 +896,7 @@ inline HTTPVersion::HTTPVersion()
   -------------------------------------------------------------------------*/
 
 inline HTTPVersion::HTTPVersion(int32_t version)
-:m_version(version)
+                   :m_version(version)
 {
 }
 
@@ -886,8 +904,8 @@ inline HTTPVersion::HTTPVersion(int32_t version)
   -------------------------------------------------------------------------*/
 
 inline HTTPVersion::HTTPVersion(int ver_major, int ver_minor)
-  :
-m_version(HTTP_VERSION(ver_major, ver_minor))
+                   :
+                   m_version(HTTP_VERSION(ver_major, ver_minor))
 {
 }
 
@@ -923,11 +941,11 @@ HTTPVersion::operator =(const HTTPVersion & hv)
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
 
-inline int
-HTTPVersion::operator ==(const HTTPVersion & hv) const
-{
-  return (m_version == hv.m_version);
-}
+  inline int
+  HTTPVersion::operator ==(const HTTPVersion & hv) const
+  {
+    return (m_version == hv.m_version);
+  }
 
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
@@ -980,7 +998,7 @@ HTTPVersion::operator <=(const HTTPVersion & hv) const
 
 inline
 HTTPHdr::HTTPHdr()
-  : MIMEHdr(), m_http(NULL), m_url_cached(), m_target_cached(false)
+        : MIMEHdr(), m_http(NULL), m_url_cached(), m_target_cached(false)
 { }
 
 
@@ -1524,11 +1542,11 @@ HTTPHdr::scheme_get(int* length)
   -------------------------------------------------------------------------*/
 
 enum
-{
-  CACHE_ALT_MAGIC_ALIVE = 0xabcddeed,
-  CACHE_ALT_MAGIC_MARSHALED = 0xdcbadeed,
-  CACHE_ALT_MAGIC_DEAD = 0xdeadeed
-};
+  {
+    CACHE_ALT_MAGIC_ALIVE = 0xabcddeed,
+    CACHE_ALT_MAGIC_MARSHALED = 0xdcbadeed,
+    CACHE_ALT_MAGIC_DEAD = 0xdeadeed
+  };
 
 /// Header for an alternate of an object.
 /// This is close to a POD, all the real API is in the @c HTTPInfo class.
@@ -1546,10 +1564,10 @@ struct HTTPCacheAlt
     CryptoHash m_key; ///< Key for fragment.
     uint64_t m_offset:48; ///< Starting offset of fragment in object.
     union {
-      uint16_t raw;
+      uint16_t m_flags;
       struct {
-	unsigned int cached_p:1; ///< Presence bit (is fragment in cache?)
-	unsigned int zero:15; ///< Zero fill for future use.
+        unsigned int cached_p:1; ///< Presence bit (is fragment in cache?)
+        unsigned int zero:15; ///< Zero fill for future use.
       } m_flag;
     };
   };
@@ -1582,17 +1600,18 @@ struct HTTPCacheAlt
     uint32_t m_flags;
     struct {
       /** Do we own our own buffer?
-	  @c true if the buffer containing this data is owned by this object.
-	  INVARIANT: if we own this buffer then we also own the buffers for
-	  @a m_request_hdr and @a m_response_hdr.
+          @c true if the buffer containing this data is owned by this object.
+          INVARIANT: if we own this buffer then we also own the buffers for
+          @a m_request_hdr and @a m_response_hdr.
       */
       uint32_t writeable_p:1;
       /// Was this alternate originally stored as a partial object?
-      uint32_t partial_p:1;
+      uint32_t composite_p:1;
       /// Are all fragments in cache?
-      uint32_t present_p:1;
+      uint32_t complete_p:1;
       /// Is the fragment table independently allocated?
       uint32_t table_allocated_p:1;
+      // Note - !composite_p => complete_p
     } m_flag;
   };
 
@@ -1648,20 +1667,20 @@ struct HTTPCacheAlt
 
 class HTTPInfo
 {
-public:
+ public:
   typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
   typedef HTTPCacheAlt::FragmentDescriptorTable FragmentDescriptorTable; ///< Import type.
 
   HTTPCacheAlt *m_alt;
 
-  HTTPInfo()
-    : m_alt(NULL)
-  { }
+ HTTPInfo()
+   : m_alt(NULL)
+    { }
 
   ~HTTPInfo()
-  {
-    clear();
-  }
+    {
+      clear();
+    }
 
   void clear() { m_alt = NULL; }
   bool valid() const { return m_alt != NULL; }
@@ -1710,13 +1729,18 @@ public:
   void request_sent_time_set(time_t t) { m_alt->m_request_sent_time = t; }
   void response_received_time_set(time_t t) { m_alt->m_response_received_time = t; }
 
+  bool is_composite() const { return m_alt->m_flag.composite_p; }
+  bool is_complete() const { return m_alt->m_flag.complete_p; }
+
+# if 0
   /** Compute missing ranges.
       Given a request range spec compute a range spec for data that is not in the cache.
   */
   void get_missing_ranges(
-			   HTTPRangeSpec const& req ///< [in] UA request with content length applied
-			  , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
-			  );
+                          HTTPRangeSpec const& req ///< [in] UA request with content length applied
+                          , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
+                          );
+# endif
 
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
@@ -1736,12 +1760,14 @@ public:
   /// Get the target fragment size.
   uint32_t get_frag_fixed_size() const;
   /// Mark a fragment at index @a idx as written to cache.
-  void mark_frag_write(uint32_t idx);
+  void mark_frag_write(int idx);
+  /// Check if a fragment is cached.
+  bool is_frag_cached(int idx);
 
   // Sanity check functions
   static bool check_marshalled(char *buf, int len);
 
-private:
+ private:
   HTTPInfo(const HTTPInfo & h);
 };
 
@@ -1767,11 +1793,11 @@ HTTPInfo::operator =(const HTTPInfo & m)
   return *this;
 }
 
-inline CryptoHash const&
-HTTPInfo::object_key_get()
-{
-  return m_alt->m_earliest.m_key;
-}
+  inline CryptoHash const&
+  HTTPInfo::object_key_get()
+  {
+    return m_alt->m_earliest.m_key;
+  }
 
 inline void
 HTTPInfo::object_key_get(CryptoHash *key)
@@ -1830,7 +1856,13 @@ HTTPInfo::get_frag_key_of(int64_t offset)
 inline CryptoHash const&
 HTTPInfo::get_frag_key(int idx)
 {
-  return m_alt ? (*m_alt->m_fragments)[idx].m_key : CRYPTO_HASH_ZERO;
+  return (*m_alt->m_fragments)[idx].m_key;
+}
+
+inline bool
+HTTPInfo::is_frag_cached(int idx)
+{
+  return (*m_alt->m_fragments)[idx].m_flag.cached_p;
 }
 
 inline

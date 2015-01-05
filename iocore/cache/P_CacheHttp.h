@@ -131,6 +131,11 @@ struct CacheHTTPInfoVector
   self& waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t offset);
   /// Get the fragment key for a specific @a offset.
   CacheKey const& key_for(CacheKey const& alt_key, int64_t offset);
+  /** Compute the actual uncached range, considering all the writers.
+
+      @return @c true if there is uncached data that must be retrieved.
+   */
+  bool get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec const& org, HTTPRangeSpec& result);
 
   /** Sigh, yet another custom array class.
       @c Vec doesn't work because it really only works well with pointers, not objects.

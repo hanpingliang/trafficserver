@@ -37,7 +37,7 @@
  *                                                                     *
  ***********************************************************************/
 
-#define ENABLE_PARSER_FAST_PATHS	1
+#define ENABLE_PARSER_FAST_PATHS        1
 
 /***********************************************************************
  *                                                                     *
@@ -1094,9 +1094,9 @@ http_parser_parse_req(HTTPParser *parser, HdrHeap *heap, HTTPHdrImpl *hh, const 
     if (version == HTTP_VERSION(0, 9))
       return PARSE_DONE;
 
-  	MIMEParseResult ret =  mime_parser_parse(&parser->m_mime_parser, heap, hh->m_fields_impl, start, end, must_copy_strings, eof);
-  	if (ret == PARSE_DONE) ret = validate_hdr_host(hh); // if we're done with the main parse, check HOST.
-  	return ret;
+        MIMEParseResult ret =  mime_parser_parse(&parser->m_mime_parser, heap, hh->m_fields_impl, start, end, must_copy_strings, eof);
+        if (ret == PARSE_DONE) ret = validate_hdr_host(hh); // if we're done with the main parse, check HOST.
+        return ret;
   }
 
   return mime_parser_parse(&parser->m_mime_parser, heap, hh->m_fields_impl, start, end, must_copy_strings, eof);
@@ -1114,9 +1114,9 @@ validate_hdr_host(HTTPHdrImpl* hh) {
       char const* host_val = host_field->value_get(&host_len);
       ts::ConstBuffer addr, port, rest, host(host_val, host_len);
       if (0 == ats_ip_parse(host, &addr, &port, &rest)) {
-	if (port) {
-	  if (port.size() > 5) return PARSE_ERROR;
-	  int port_i = ink_atoi(port.data(), port.size());
+        if (port) {
+          if (port.size() > 5) return PARSE_ERROR;
+          int port_i = ink_atoi(port.data(), port.size());
           if ( port.size() > 5 || port_i >= 65536 || port_i <= 0) return PARSE_ERROR;
         } 
         while (rest && PARSE_DONE == ret) {
@@ -2102,17 +2102,17 @@ HTTPInfo::get_handle(char *buf, int len)
 }
 
 void
-HTTPInfo::mark_frag_write(uint32_t idx) {
+HTTPInfo::mark_frag_write(int idx) {
   FragmentDescriptor* frag;
   FragmentDescriptorTable* old_table = 0;
 
   ink_assert(m_alt);
   ink_assert(idx > 0);
 
-  if (0 == m_alt->m_fragments || idx > m_alt->m_fragments->m_n) { // no room at the inn
+  if (0 == m_alt->m_fragments || idx > static_cast<int>(m_alt->m_fragments->m_n)) { // no room at the inn
     int64_t obj_size = this->object_size_get();
     uint32_t ff_size = this->get_frag_fixed_size();
-    uint32_t n = 0; // set if we need to allocate, this is max array index needed.
+    int n = 0; // set if we need to allocate, this is max array index needed.
 
     if (0 == m_alt->m_fragments && obj_size > 0 && ff_size > 0) {
       n = (obj_size + ff_size - 1) / ff_size;
@@ -2125,7 +2125,7 @@ HTTPInfo::mark_frag_write(uint32_t idx) {
 
     size_t size = FragmentDescriptorTable::calc_size(n);
     size_t old_size = 0;
-    size_t old_count = 0;
+    int old_count = 0;
     int64_t offset = 0;
     CryptoHash key;
 
@@ -2193,6 +2193,22 @@ HTTPInfo::get_frag_index_of(int64_t offset)
  *                      R A N G E   S U P P O R T                      *
  *                                                                     *
  ***********************************************************************/
+
+namespace {
+  // Need to promote this out of here at some point.
+  struct integer {
+    static size_t const MAX_DIGITS = 15;
+    static bool parse(ts::ConstBuffer const& b, uint64_t& result) {
+      bool zret = false;
+      if (0 < b.size() && b.size() <= MAX_DIGITS) {
+        size_t n;
+        result = ats_strto64(b.data(), b.size(), &n);
+        zret = n == b.size();
+      }
+      return zret;
+    }
+  };
+}
 
 bool
 HTTPRangeSpec::parse(char const* v, int len)
@@ -2324,6 +2340,50 @@ HTTPRangeSpec::apply(uint64_t len)
   return this->isValid();
 }
 
+int64_t
+HTTPRangeSpec::parseContentRange(char const* v, int len)
+{
+  ts::ConstBuffer src(v, len);
+  int64_t zret = -1;
+
+  this->clear();
+  _state = INVALID;
+  src.skip(&ParseRules::is_ws);
+
+  if (src.size() > sizeof(HTTP_LEN_BYTES)+1 &&
+      0 == strncasecmp(src.data(), HTTP_VALUE_BYTES, HTTP_LEN_BYTES) &&
+      ParseRules::is_ws(src[HTTP_LEN_BYTES]) // must have white space
+    ) {
+    uint64_t cl, low, high;
+    bool unsatisfied_p = false, indeterminate_p;
+    ts::ConstBuffer min, max;
+
+    src += HTTP_LEN_BYTES;
+    src.skip(&ParseRules::is_ws); // but can have any number
+
+    max = src.splitOn('/'); // src has total length value
+
+    if (max.size() == 1 && *max == '*') unsatisfied_p = true;
+    else min = max.splitOn('-');
+
+    src.trim(&ParseRules::is_ws);
+    if (src && src.size() == 1 && *src == '*') indeterminate_p = true;
+
+    // note - spec forbids internal spaces so it's "X-Y/Z" w/o whitespace.
+    // spec also says we can have "*/Z" or "X-Y/*" but never "*/*".
+
+    if ( !(indeterminate_p && unsatisfied_p) &&
+         (indeterminate_p || integer::parse(src, cl)) &&
+         (unsatisfied_p || (integer::parse(min, low) && integer::parse(max, high))
+    )) {
+      if (unsatisfied_p) _state = UNSATISFIABLE;
+      else this->add(low, high);
+      if (!indeterminate_p) zret = static_cast<int64_t>(cl);
+    }
+  }
+  return zret;
+}
+
 namespace {
 
   int
@@ -2412,6 +2472,38 @@ HTTPRangeSpec::writePartBoundary(MIOBuffer* out, char const* boundary_str, size_
   return spot - d->data();
 }
 
+int
+HTTPRangeSpec::print(char* buff, size_t len) const
+{
+  size_t zret = 0;
+  bool first = true;
+
+  // Can't possibly write a range in less than this size buffer.
+  if (len < static_cast<size_t>(HTTP_LEN_BYTES) + 4) return 0;
+
+  for ( const_iterator spot = this->begin(), limit = this->end() ; spot != limit ; ++spot ) {
+    int n;
+
+    if (first) {
+      memcpy(buff, HTTP_VALUE_BYTES, HTTP_LEN_BYTES);
+      buff[HTTP_LEN_BYTES] = '=';
+      zret += HTTP_LEN_BYTES + 1;
+      first = false;
+    } else if (len < zret + 4) {
+      break;
+    } else {
+      buff[zret++] = ',';
+    }
+
+    n = snprintf(buff, len - zret, "%" PRIu64 "-%" PRIu64 , spot->_min , spot->_max);
+    if (n + zret >= len) break; // ran out of room
+    else zret += n;
+  }
+  return zret;
+}
+
+
+# if 0
 void
 HTTPInfo::get_missing_ranges(HTTPRangeSpec const& req, HTTPRangeSpec& missing)
 {
@@ -2437,3 +2529,4 @@ HTTPInfo::get_missing_ranges(HTTPRangeSpec const& req, HTTPRangeSpec& missing)
   if (lidx <= ridx)
     missing.add(lidx * ffs, ridx * ffs);
 }
+# endif
