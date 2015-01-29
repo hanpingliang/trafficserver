@@ -471,9 +471,9 @@ CacheVC::set_http_info(CacheHTTPInfo *ainfo)
 #endif
 
 void
-CacheVC::set_http_content_length(int64_t /* cl */)
+CacheVC::set_http_content_length(int64_t cl)
 {
-  ink_release_assert(! "[amc] Store the content length somewhere");
+  resp_range.apply(cl);
 }
 
 bool CacheVC::set_pin_in_cache(time_t time_pin)

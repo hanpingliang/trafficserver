@@ -568,7 +568,10 @@ extern CacheSync *cacheDirSync;
 // Function Prototypes
 #ifdef HTTP_CACHE
 int cache_write(CacheVC *, CacheHTTPInfoVector *);
-int get_alternate_index(CacheHTTPInfoVector *cache_vector, CacheKey key);
+/// Get the index for the alternate indentified by @a key in @a cache_vector.
+/// @a idx is a hint - that index is checked first and if not there the vector is scanned.
+/// This makes repeated access faster if the vector is not being updated.
+int get_alternate_index(CacheHTTPInfoVector *cache_vector, CacheKey key, int idx = -1);
 #endif
 CacheVC *new_DocEvacuator(int nbytes, Vol *d);
 

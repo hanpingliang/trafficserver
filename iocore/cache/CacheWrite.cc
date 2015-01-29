@@ -33,13 +33,18 @@
 // used to get the alternate which is actually present in the document
 #ifdef HTTP_CACHE
 int
-get_alternate_index(CacheHTTPInfoVector *cache_vector, CacheKey key)
+get_alternate_index(CacheHTTPInfoVector *cache_vector, CacheKey key, int idx)
 {
   int alt_count = cache_vector->count();
   CacheHTTPInfo *obj;
   if (!alt_count)
     return -1;
+  // See if the hint is correct.
+  if (0 <= idx && idx < alt_count && cache_vector->get(idx)->compare_object_key(&key))
+    return idx;
+  // Otherwise scan the vector.
   for (int i = 0; i < alt_count; i++) {
+    if (i == idx) continue; // already checked that one.
     obj = cache_vector->get(i);
     if (obj->compare_object_key(&key)) {
       // Debug("cache_key", "Resident alternate key  %X", key.slice32(0));
@@ -70,7 +75,7 @@ CacheVC::updateVector(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED */)
     int vec = alternate.valid();
     if (f.update) {
       // all Update cases. Need to get the alternate index.
-      alternate_index = get_alternate_index(write_vector, update_key);
+      alternate_index = get_alternate_index(write_vector, update_key, alternate_index);
       Debug("cache_update", "updating alternate index %d frags %d", alternate_index, alternate_index >=0 ? write_vector->get(alternate_index)->get_frag_count() : -1);
       // if its an alternate delete
       if (!vec) {

@@ -2424,8 +2424,6 @@ HttpSM::state_icp_lookup(int event, void *data)
 int
 HttpSM::state_cache_open_write(int event, void *data)
 {
-  MIMEField* field;
-
   STATE_ENTER(&HttpSM:state_cache_open_write, event);
   milestones.cache_open_write_end = ink_get_hrtime();
   pending_action = NULL;
@@ -2436,13 +2434,6 @@ HttpSM::state_cache_open_write(int event, void *data)
     // OPEN WRITE is successful //
     //////////////////////////////
     t_state.cache_info.write_lock_state = HttpTransact::CACHE_WL_SUCCESS;
-    if (NULL != (field = t_state.hdr_info.server_response.field_find(MIME_FIELD_CONTENT_RANGE, MIME_LEN_CONTENT_RANGE))) {
-      int len;
-      char const* cr = field->value_get(&len);
-      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parse(cr, len);
-      cache_sm.cache_write_vc->set_http_content_length(cl);
-      
-    }
     break;
 
   case CACHE_EVENT_OPEN_WRITE_FAILED:
@@ -5554,6 +5545,8 @@ HttpSM::perform_transform_cache_write_action()
 void
 HttpSM::perform_cache_write_action()
 {
+  MIMEField* field;
+
   DebugSM("http", "[%" PRId64 "] perform_cache_write_action %s",
         sm_id, HttpDebugNames::get_cache_action_name(t_state.cache_info.action));
 
@@ -5604,8 +5597,20 @@ HttpSM::perform_cache_write_action()
   case HttpTransact::CACHE_DO_REPLACE:
     // Fix need to set up delete for after cache write has
     //   completed
+    if (NULL != (field = t_state.hdr_info.server_response.field_find(MIME_FIELD_CONTENT_RANGE, MIME_LEN_CONTENT_RANGE))) {
+      int len;
+      char const* cr = field->value_get(&len);
+      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parseContentRange(cr, len);
+      cache_sm.cache_write_vc->set_http_content_length(cl);
+      
+    }
     if (transform_info.entry == NULL || t_state.api_info.cache_untransformed == true) {
-      cache_sm.close_read();
+      if (cache_sm.cache_read_vc && cache_sm.cache_read_vc->is_http_partial_content()) {
+        HttpTunnelProducer *p = setup_cache_read_transfer();
+        tunnel.tunnel_run(p);
+      } else {
+        cache_sm.close_read();
+      }
       t_state.cache_info.write_status = HttpTransact::CACHE_WRITE_IN_PROGRESS;
       setup_cache_write_transfer(&cache_sm,
                                  server_entry->vc,
