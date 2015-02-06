@@ -8859,7 +8859,7 @@ HttpTransact::change_response_header_because_of_range_request(State *s, HTTPHdr 
     field->value_set(header->m_heap, header->m_mime, buff, n);
     header->field_attach(field);
   }
-  header->set_content_length(cache_read_vc->get_http_partial_content_size());
+  header->set_content_length(cache_read_vc->get_effective_content_size());
 }
 
 #if TS_HAS_TESTS

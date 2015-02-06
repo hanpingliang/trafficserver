@@ -315,44 +315,28 @@ CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec c
 {
   int alt_idx = this->index_of(alt_key);
   Item& item = data[alt_idx];
-  int low_idx = INT64_MAX, high_idx = 0;
-  int64_t low_off, high_off;
   Queue<CacheVC, Link_CacheVC_OpenDir_Link> writers;
   CacheVC* vc;
   CacheVC* cycle_vc = NULL;
   // Yeah, this need to be tunable.
-  int64_t DELTA = item._alternate.get_frag_fixed_size() * 16;
-  HTTPInfo::FragmentDescriptorTable& frags = *(item._alternate.get_frag_table());
+  uint64_t DELTA = item._alternate.get_frag_fixed_size() * 16;
+  HTTPRangeSpec::Range r(org.getConvexHull());
 
-  // Compute the convex hull of the original in fragment indices.
-  for ( HTTPRangeSpec::const_iterator spot = org.begin(), limit = org.end() ; spot != limit ; ++spot ) {
-    low_idx = std::min(item._alternate.get_frag_index_of(spot->_min), low_idx);
-    high_idx = std::max(item._alternate.get_frag_index_of(spot->_max), high_idx);
-  }
-  // Scan to determine the base uncached span
-  while (low_idx <= high_idx)
-    if (item._alternate.is_frag_cached(low_idx)) ++low_idx;
-  while (low_idx <= high_idx)
-    if (item._alternate.is_frag_cached(high_idx)) --high_idx;
-
-  low_off = frags[low_idx].m_offset;
-  high_off = frags[high_idx].m_offset + item._alternate.get_frag_fixed_size();
-
-  if (low_off < high_off) {
+  if (r.isValid()) {
     /* Now clip against the writers.
        We move all the writers to a local list and move them back as we are done using them to clip.
        This is so we don't skip a potentially valid writer because they are not in start order.
     */
     writers.append(item._writers);
     item._writers.clear();
-    while (low_off < high_off && NULL != (vc = writers.pop())) {
-      int64_t base = static_cast<int64_t>(writers.head->resp_range.getOffset());
-      int64_t delta = static_cast<int64_t>(writers.head->resp_range.getRemnantSize());
+    while (r._min < r._max && NULL != (vc = writers.pop())) {
+      uint64_t base = static_cast<int64_t>(writers.head->resp_range.getOffset());
+      uint64_t delta = static_cast<int64_t>(writers.head->resp_range.getRemnantSize());
 
-      if (base+delta < low_off || base > high_off) {
+      if (base+delta < r._min || base > r._max) {
         item._writers.push(vc);
-      } else if (base < low_off + DELTA) {
-        low_off = base + delta; // we can wait, so depend on this writer and clip.
+      } else if (base < r._min + DELTA) {
+        r._min = base + delta; // we can wait, so depend on this writer and clip.
         item._writers.push(vc); // we're done with it, put it back.
         cycle_vc = NULL;
       } else if (vc == cycle_vc) { // we're looping.
@@ -365,8 +349,8 @@ CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec c
     }
   }
   result.clear();
-  if (low_off < high_off) {
-    result.add(low_off, high_off);
+  if (r._min < r._max) {
+    result.add(r._min, r._max);
   }
   return !result.isEmpty();
 }
@@ -392,7 +376,7 @@ CacheRange::init(HTTPHdr* req)
   if (rf) {
     int len;
     char const* val = rf->value_get(&len);
-    zret = _r.parse(val, len);
+    zret = _r.parseRangeFieldValue(val, len);
   }
   return zret;
 }

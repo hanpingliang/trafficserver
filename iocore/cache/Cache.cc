@@ -466,13 +466,18 @@ CacheVC::set_http_info(CacheHTTPInfo *ainfo)
   } else
     f.allow_empty_doc = 0;
   alternate.copy_shallow(ainfo);
+  // This is not a good place to do this but I can't figure out a better one. We must do it
+  // no earlier than this, because there's no actual alternate to store the value in before this
+  // and I don't know of any later point that's guaranteed to be called before this is needed.
+  alternate.m_alt->m_fixed_fragment_size = cache_config_target_fragment_size - sizeofDoc;
   ainfo->clear();
 }
 #endif
 
 void
-CacheVC::set_http_content_length(int64_t cl)
+CacheVC::set_full_content_length(int64_t cl)
 {
+  alternate.object_size_set(cl);
   resp_range.apply(cl);
 }
 
@@ -493,7 +498,13 @@ bool CacheVC::set_pin_in_cache(time_t time_pin)
 bool
 CacheVC::get_uncached(HTTPRangeSpec& r)
 {
-  return write_vector->get_uncached_range(earliest_key, resp_range.getRangeSpec(), r);
+  if (od) {
+    ink_assert(write_vector);
+    return write_vector->get_uncached_range(earliest_key, uncached_range.getRangeSpec(), r);
+  } else {
+    r = uncached_range.getRangeSpec();
+    return !r.isEmpty();
+  }
 }
 
 bool CacheVC::set_disk_io_priority(int priority)

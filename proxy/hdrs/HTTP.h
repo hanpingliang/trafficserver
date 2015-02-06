@@ -535,9 +535,9 @@ struct HTTPRangeSpec {
     uint64_t _max;
 
     /// Default constructor - invalid range.
-  Range() : _min(UINT64_MAX), _max(1) { }
+    Range() : _min(UINT64_MAX), _max(0) { }
     /// Construct as the range ( @a low .. @a high )
-  Range(uint64_t low, uint64_t high) : _min(low), _max(high) {}
+    Range(uint64_t low, uint64_t high) : _min(low), _max(high) {}
 
     /// Test if this range is a suffix range.
     bool isSuffix() const;
@@ -585,21 +585,21 @@ struct HTTPRangeSpec {
   /// Reset to re-usable state.
   void clear();
 
-  /** Parse a range field @a value and update @a this with the results.
+  /** Parse a Range field @a value and update @a this with the results.
       @return @c true if @a value was a valid range specifier, @c false otherwise.
   */
-  bool parse(char const* value, int len);
+  bool parseRangeFieldValue(char const* value, int len);
 
-  /** Parse a Content-Range field.
+  /** Parse a Content-Range field @a value.
 
       @a range is set to the content range. If the content range is unsatisfied the @a range is
       set to @c UNSATISFIABLE. If there is a parsing error the @a range is set to @c INVALID.
 
-      @note The content length return is ambiguous on its own, the state of @a range must be checked.
+      @note The content length return is ambiguous on its own, the state of @a this range must be checked.
 
       @return The content length, or -1 if there is an error or the content length is indeterminate.
   */
-  int64_t parseContentRange(char const* v, int len);
+  int64_t parseContentRangeFieldValue(char const* value, int len);
 
   /// Print the range specification.
   /// @return The number of characters printed.
@@ -665,6 +665,12 @@ struct HTTPRangeSpec {
   /// Access the range at index @a idx.
   Range const& operator [] (int n) const;
 
+  /// Calculate the convex hull of the range spec.
+  /// The convex hull is the smallest single range that contains all of the ranges in the range spec.
+  /// @note This will return an invalid range if there are no ranges in the range spec.
+  /// @see HttpRangeSpec::Range::isValid
+  Range getConvexHull() const;
+
   /** Calculate the content length for this range specification.
 
       @note If a specific content length has not been @c apply 'd this will not produce
@@ -704,6 +710,7 @@ struct HTTPRangeSpec {
   const_iterator end() const;
 
   self& add(uint64_t low, uint64_t high);
+  self& add(Range const& r);
 };
 
 class IOBufferReader;
@@ -1583,10 +1590,40 @@ struct HTTPCacheAlt
   struct FragmentDescriptorTable
   {
     uint32_t m_n; ///< The allocated number of entries in the table.
+
+    /** Fragment index of last initial segment cached.
+
+        All fragments from the earliest to this are in cache.
+        
+        @note A simple effort to minimize the cost of detecting a complete object.
+        In the normal case we'll get all the fragments in order so this will roll along nicely.
+        Otherwise we may have to do a lot of work on a single fragment, but that' still better
+        than doing it every time for every fragment.
+    */
+    int32_t m_cached_idx;
+
     /// 1 based array operator.
     FragmentDescriptor& operator [] (int idx);
     /// Calculate the allocation size needed for a maximum array index of @a n.
     static size_t calc_size(uint32_t n);
+  };
+
+  /** Accessor for fragments because earliest (index 0) is special.
+
+      This tries to get the best of not indirecting through this structure by directly accessing
+      the fragment table while making the external API (0-based indexing) simple. We can't put this
+      in the @c FragmentDescriptorTable itself because that gets serialized.
+  */
+  struct FragmentAccessor
+  {
+    /// Construct from an alternate instance.
+    FragmentAccessor(HTTPCacheAlt*);
+    /// 0 based indexing of fragments.
+    /// @note The earliest fragment is index 0.
+    FragmentDescriptor& operator [] (int idx);
+
+    HTTPCacheAlt* _alt; ///< The source alternate.
+    FragmentDescriptorTable* _table; ///< Table of non-earliest fragments.
   };
 
   HTTPCacheAlt();
@@ -1607,11 +1644,14 @@ struct HTTPCacheAlt
       uint32_t writeable_p:1;
       /// Was this alternate originally stored as a partial object?
       uint32_t composite_p:1;
+      /// Did the origin tell us the actual length of the object?
+      uint32_t content_length_p:1;
       /// Are all fragments in cache?
       uint32_t complete_p:1;
       /// Is the fragment table independently allocated?
       uint32_t table_allocated_p:1;
       // Note - !composite_p => complete_p
+      //      - complete_p => content_length_p
     } m_flag;
   };
 
@@ -1620,16 +1660,15 @@ struct HTTPCacheAlt
   int32_t m_id;
   int32_t m_rid;
 
+  /// # of fragments in the alternate, including the earliest fragment.
+  /// This can be zero for a resident alternate.
+  uint32_t m_frag_count;
+
   /** The target size for fragments in this alternate.
       This is @b mandatory if the object is being partially cached.
       During read it should be used as a guideline but not considered definitive.
   */
   uint32_t m_fixed_fragment_size;
-
-  /// # of fragments in the alternate, including the earliest fragment.
-  /// This can be zero for a resident alternate.
-  uint32_t m_frag_count;
-
 
   HTTPHdr m_request_hdr;
   HTTPHdr m_response_hdr;
@@ -1670,6 +1709,7 @@ class HTTPInfo
  public:
   typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
   typedef HTTPCacheAlt::FragmentDescriptorTable FragmentDescriptorTable; ///< Import type.
+  typedef HTTPCacheAlt::FragmentAccessor FragmentAccessor; ///< Import type.
 
   HTTPCacheAlt *m_alt;
 
@@ -1732,15 +1772,15 @@ class HTTPInfo
   bool is_composite() const { return m_alt->m_flag.composite_p; }
   bool is_complete() const { return m_alt->m_flag.complete_p; }
 
-# if 0
-  /** Compute missing ranges.
+  /** Compute uncached ranges.
       Given a request range spec compute a range spec for data that is not in the cache.
+
+      @return @c true if any uncached range was found.
   */
-  void get_missing_ranges(
-                          HTTPRangeSpec const& req ///< [in] UA request with content length applied
-                          , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
-                          );
-# endif
+  bool get_uncached(
+                    HTTPRangeSpec const& req ///< [in] UA request with content length applied
+                    , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
+                    );
 
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
@@ -1763,6 +1803,8 @@ class HTTPInfo
   void mark_frag_write(int idx);
   /// Check if a fragment is cached.
   bool is_frag_cached(int idx);
+  /// Get the range of bytes for the fragments from @a low to @a high.
+  HTTPRangeSpec::Range get_range_for_frags(int low, int high);
 
   // Sanity check functions
   static bool check_marshalled(char *buf, int len);
@@ -1827,6 +1869,7 @@ inline void
 HTTPInfo::object_size_set(int64_t size)
 {
   m_alt->m_earliest.m_offset = size;
+  m_alt->m_flag.content_length_p = true;
 }
 
 inline HTTPInfo::FragmentDescriptorTable*
@@ -1974,6 +2017,12 @@ HTTPRangeSpec::Range::apply(uint64_t len)
   return zret;
 }
 
+inline HTTPRangeSpec&
+HTTPRangeSpec::add(uint64_t low, uint64_t high)
+{
+  return this->add(Range(low, high));
+}
+
 inline HTTPRangeSpec::Range&
 HTTPRangeSpec::operator [] (int n)
 {
@@ -2018,6 +2067,18 @@ HTTPRangeSpec::end() const
   return const_cast<self*>(this)->end();
 }
 
+inline HTTPRangeSpec::Range
+HTTPRangeSpec::getConvexHull() const
+{
+  Range zret;
+  // Compute the convex hull of the original in fragment indices.
+  for ( const_iterator spot = this->begin(), limit = this->end() ; spot != limit ; ++spot ) {
+    if (spot->_min < zret._min) zret._min = spot->_min;
+    if (spot->_max > zret._max) zret._max = spot->_max;
+  }
+  return zret;
+}
+
 inline HTTPCacheAlt::FragmentDescriptor&
 HTTPCacheAlt::FragmentDescriptorTable::operator [] (int idx)
 {
@@ -2030,4 +2091,15 @@ HTTPCacheAlt::FragmentDescriptorTable::calc_size(uint32_t n)
   return n <= 1 ? 0 : sizeof(FragmentDescriptorTable) + (n-1) * sizeof(FragmentDescriptor);
 }
 
+inline
+HTTPCacheAlt::FragmentAccessor::FragmentAccessor(HTTPCacheAlt* alt)
+             : _alt(alt), _table(alt->m_fragments)
+{
+}
+
+inline HTTPCacheAlt::FragmentDescriptor&
+HTTPCacheAlt::FragmentAccessor::operator [] (int idx)
+{
+  return idx == 0 ? _alt->m_earliest : (*_table)[idx];
+}
 #endif /* __HTTP_H__ */

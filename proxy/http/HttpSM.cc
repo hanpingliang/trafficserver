@@ -5600,8 +5600,8 @@ HttpSM::perform_cache_write_action()
     if (NULL != (field = t_state.hdr_info.server_response.field_find(MIME_FIELD_CONTENT_RANGE, MIME_LEN_CONTENT_RANGE))) {
       int len;
       char const* cr = field->value_get(&len);
-      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parseContentRange(cr, len);
-      cache_sm.cache_write_vc->set_http_content_length(cl);
+      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parseContentRangeFieldValue(cr, len);
+      cache_sm.cache_write_vc->set_full_content_length(cl);
       
     }
     if (transform_info.entry == NULL || t_state.api_info.cache_untransformed == true) {
@@ -5864,7 +5864,7 @@ HttpSM::setup_cache_read_transfer()
   ink_assert(cache_sm.cache_read_vc != NULL);
 
 //  doc_size = t_state.cache_info.object_read->object_size_get();
-  doc_size = cache_sm.cache_read_vc->get_http_partial_content_size();
+  doc_size = cache_sm.cache_read_vc->get_effective_content_size();
   alloc_index = buffer_size_to_index(doc_size + index_to_buffer_size(HTTP_HEADER_BUFFER_SIZE_INDEX));
 
 #ifndef USE_NEW_EMPTY_MIOBUFFER
@@ -5956,7 +5956,7 @@ HttpSM::setup_cache_write_transfer(HttpCacheSM * c_sm,
   store_info->clear();
 
   int64_t cl = t_state.hdr_info.response_content_length;
-  if (cl != HTTP_UNDEFINED_CL) c_sm->cache_write_vc->set_http_content_length(cl);
+  if (cl != HTTP_UNDEFINED_CL) c_sm->cache_write_vc->set_full_content_length(cl);
 
   tunnel.add_consumer(c_sm->cache_write_vc,
                       source_vc, &HttpSM::tunnel_handler_cache_write, HT_CACHE_WRITE, name, skip_bytes);

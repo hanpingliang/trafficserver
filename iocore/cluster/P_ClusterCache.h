@@ -357,8 +357,8 @@ struct ClusterVConnectionBase: public CacheVConnection
   // the range formatting which we then just pass through. For now, this just prevents
   // link problems so I can get the base case to work.
   virtual char const* get_http_range_boundary_string(int*) const { return NULL; }
-  virtual int64_t get_http_partial_content_size() { return this->get_object_size(); }
-  virtual void set_http_content_length(int64_t) { } // only used when writing to cache
+  virtual int64_t get_effective_content_size() { return this->get_object_size(); }
+  virtual void set_full_content_length(int64_t) { } // only used when writing to cache
   virtual HTTPRangeSpec& get_http_range_spec() { return resp_range.getRangeSpec(); }
   virtual bool is_http_partial_content() { return false; }
   virtual bool get_uncached(HTTPRangeSpec& r) { r.clear(); return false; }

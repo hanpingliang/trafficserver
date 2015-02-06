@@ -377,8 +377,8 @@ struct CacheVC: public CacheVConnection
   int frag_idx_for_offset(uint64_t offset);
 
   virtual char const* get_http_range_boundary_string(int* len) const;
-  virtual int64_t get_http_partial_content_size();
-  virtual void set_http_content_length(int64_t size);
+  virtual int64_t get_effective_content_size();
+  virtual void set_full_content_length(int64_t size);
   virtual HTTPRangeSpec& get_http_range_spec();
   virtual bool is_http_partial_content();
   virtual bool get_uncached(HTTPRangeSpec& r);
@@ -434,6 +434,7 @@ struct CacheVC: public CacheVConnection
   LINK(CacheVC, stat_link);
 #endif
   CacheRange resp_range;          ///< Tracking information for range data for response.
+  CacheRange uncached_range;      ///< The ranges in the request that are not in cache.
   // end Region B
 
   // Start Region C

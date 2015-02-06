@@ -181,9 +181,9 @@ CacheVC::get_http_range_boundary_string(int* len) const
 }
 
 int64_t
-CacheVC::get_http_partial_content_size()
+CacheVC::get_effective_content_size()
 {
-  return resp_range.calcContentLength();
+  return this->is_http_partial_content() ? resp_range.calcContentLength() : alternate.object_size_get();
 }
 
 HTTPRangeSpec&
@@ -1222,16 +1222,19 @@ CacheVC::openReadStartHead(int event, Event * e)
       doc_len = alternate.object_size_get();
 
       // Handle any range related setup.
-      if (!resp_range.init(&request)) {
+      if (!resp_range.init(&request)) { // shouldn't this have been checked earlier?
         err = ECACHE_INVALID_RANGE;
         goto Ldone;
       }
-      if (!resp_range.apply(doc_len)) {
+      // If the object length is known we can check the range.
+      // Otherwise we have to leave it vague and talk to the origin to get full length info.
+      if (alternate.m_alt->m_flag.content_length_p && !resp_range.apply(doc_len)) {
         err = ECACHE_UNSATISFIABLE_RANGE;
         goto Ldone;
       }
       if (resp_range.isMulti())
         resp_range.setContentTypeFromResponse(alternate.response_get()).generateBoundaryStr(earliest_key);
+      alternate.get_uncached(resp_range.getRangeSpec(), uncached_range.getRangeSpec());
 
       if (key == doc->key) {      // is this my data?
         f.single_fragment = doc->single_fragment();

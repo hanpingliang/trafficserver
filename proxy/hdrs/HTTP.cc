@@ -2107,52 +2107,78 @@ HTTPInfo::mark_frag_write(int idx) {
   FragmentDescriptorTable* old_table = 0;
 
   ink_assert(m_alt);
-  ink_assert(idx > 0);
+  ink_assert(idx >= 0);
 
-  if (0 == m_alt->m_fragments || idx > static_cast<int>(m_alt->m_fragments->m_n)) { // no room at the inn
-    int64_t obj_size = this->object_size_get();
-    uint32_t ff_size = this->get_frag_fixed_size();
-    int n = 0; // set if we need to allocate, this is max array index needed.
-
-    if (0 == m_alt->m_fragments && obj_size > 0 && ff_size > 0) {
-      n = (obj_size + ff_size - 1) / ff_size;
-      if (idx > n) n = idx;
-      ++n; // account for possible empty earliest.
-    } else {
-      n = idx + MAX(4, idx>>1); // grow by 50% and at least 4
-      old_table = m_alt->m_fragments;
+  if (0 == idx) {
+    m_alt->m_earliest.m_flag.cached_p = true;
+    // Handle the common case where there's only one fragment and we just wrote it.
+    if (1 == m_alt->m_frag_count && m_alt->m_flag.content_length_p) {
+      m_alt->m_flag.complete_p = true;
+      return;
     }
+  } else {
+    if (0 == m_alt->m_fragments || idx > static_cast<int>(m_alt->m_fragments->m_n)) { // no room at the inn
+      int64_t obj_size = this->object_size_get();
+      uint32_t ff_size = this->get_frag_fixed_size();
+      int n = 0; // set if we need to allocate, this is max array index needed.
 
-    size_t size = FragmentDescriptorTable::calc_size(n);
-    size_t old_size = 0;
-    int old_count = 0;
-    int64_t offset = 0;
-    CryptoHash key;
+      ink_assert(ff_size);
 
-    m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
-    if (old_table) {
-      old_count = old_table->m_n;
-      frag = &((*old_table)[old_count - 1]);
-      offset = frag->m_offset;
-      key = frag->m_key;
-      old_size = FragmentDescriptorTable::calc_size(old_count);
-      memcpy(m_alt->m_fragments, old_table, old_size);
-      ats_free(old_table);
-    } else {
-      key = m_alt->m_earliest.m_key;
+      if (0 == m_alt->m_fragments && obj_size > 0) {
+        // Get the fragment size from the earliest fragment.
+        n = (obj_size + ff_size - 1) / ff_size;
+        if (idx > n) n = idx;
+        ++n; // account for possible empty earliest.
+      } else {
+        n = idx + MAX(4, idx>>1); // grow by 50% and at least 4
+        old_table = m_alt->m_fragments;
+      }
+
+      size_t size = FragmentDescriptorTable::calc_size(n);
+      size_t old_size = 0;
+      int old_count = 0;
+      int64_t offset = 0;
+      CryptoHash key;
+
+      m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
+      if (old_table) {
+        old_count = old_table->m_n;
+        frag = &((*old_table)[old_count - 1]);
+        offset = frag->m_offset;
+        key = frag->m_key;
+        old_size = FragmentDescriptorTable::calc_size(old_count);
+        memcpy(m_alt->m_fragments, old_table, old_size);
+        ats_free(old_table);
+      } else {
+        key = m_alt->m_earliest.m_key;
+        m_alt->m_fragments->m_cached_idx = 0;
+      }
+      m_alt->m_fragments->m_n = n;
+      m_alt->m_flag.table_allocated_p = true;
+      // fill out the new parts with offsets & keys.
+      for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count < n ; ++old_count, ++frag ) {
+        key.next();
+        offset += ff_size;
+        frag->m_key = key;
+        frag->m_offset = offset;
+      }
     }
-    m_alt->m_fragments->m_n = n;
-    m_alt->m_flag.table_allocated_p = true;
-    // fill out the new parts with offsets & keys.
-    for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count < n ; ++old_count, ++frag ) {
-      key.next();
-      offset += ff_size;
-      frag->m_key = key;
-      frag->m_offset = offset;
-    }
+    ink_assert(idx > m_alt->m_fragments->m_cached_idx);
+
+    (*m_alt->m_fragments)[idx].m_flag.cached_p = true;
   }
 
-  (*m_alt->m_fragments)[idx].m_flag.cached_p = true;
+  // bump the last cached value if possible and mark complete if appropriate.
+  // Should this be moved to OpenDir? Or is it advantageous to write this to disk even though
+  // technically it duplicates complete_p (or should we remove complete_p and use m_cached_idx >= m_frag_count ?
+  if (m_alt->m_fragments && idx == m_alt->m_fragments->m_cached_idx + 1) {
+    unsigned int j = idx + 1;
+    while (j < m_alt->m_frag_count && (*m_alt->m_fragments)[j].m_flag.cached_p)
+      ++j;
+    m_alt->m_fragments->m_cached_idx = j - 1;
+    if (j >= m_alt->m_frag_count && m_alt->m_flag.content_length_p)
+      m_alt->m_flag.complete_p = true;
+  }
 }
 
 int
@@ -2167,22 +2193,24 @@ HTTPInfo::get_frag_index_of(int64_t offset)
     zret = offset / ff_size;
   } else {
     FragmentDescriptorTable* frags = this->get_frag_table();
-    zret = offset / ff_size;
+    zret = (offset / ff_size) + 1;
     if ((*frags)[1].m_offset == 0) ++zret;
-    // Need to handle old data where the offsets are not guaranteed to be regular.
-    // So we guess (which should be close) and if we're right, boom, else linear
-    // search.
-    while (0 <= zret) {
-      if (static_cast<uint64_t>(offset) < (*frags)[zret].m_offset) {
-        --zret;
-      } else if (zret >= n-1) {
-        // if we're at the last known fragment, just compute the index.
-        zret += (static_cast<uint64_t>(offset) - (*frags)[zret].m_offset) / ff_size;
-        break;
-      } else if (static_cast<uint64_t>(offset) >= (*frags)[zret+1].m_offset) {
-        ++zret;
-      } else {
-        break;
+    else if (static_cast<uint64_t>(offset) >= (*frags)[1].m_offset) { // otherwise it's in the earliest frag, index 0
+      // Need to handle old data where the offsets are not guaranteed to be regular.
+      // So we guess (which should be close) and if we're right, boom, else linear
+      // search.
+      while (0 < zret) {
+        if (static_cast<uint64_t>(offset) < (*frags)[zret].m_offset) {
+          --zret;
+        } else if (zret >= n-1) {
+          // if we're at the last known fragment, just compute the index.
+          zret += (static_cast<uint64_t>(offset) - (*frags)[zret].m_offset) / ff_size;
+          break;
+        } else if (static_cast<uint64_t>(offset) >= (*frags)[zret+1].m_offset) {
+          ++zret;
+        } else {
+          break;
+        }
       }
     }
   }
@@ -2196,6 +2224,7 @@ HTTPInfo::get_frag_index_of(int64_t offset)
 
 namespace {
   // Need to promote this out of here at some point.
+  // This handles parsing an integer from a string with various limits and in 64 bits.
   struct integer {
     static size_t const MAX_DIGITS = 15;
     static bool parse(ts::ConstBuffer const& b, uint64_t& result) {
@@ -2211,7 +2240,7 @@ namespace {
 }
 
 bool
-HTTPRangeSpec::parse(char const* v, int len)
+HTTPRangeSpec::parseRangeFieldValue(char const* v, int len)
 {
   // Maximum # of digits permitted for an offset. Avoid issues with overflow.
   static size_t const MAX_DIGITS = 15;
@@ -2280,17 +2309,16 @@ HTTPRangeSpec::parse(char const* v, int len)
 }
 
 HTTPRangeSpec&
-HTTPRangeSpec::add(uint64_t low, uint64_t high)
+HTTPRangeSpec::add(Range const& r)
 {
   if (MULTI == _state) {
-    _ranges.push_back(Range(low, high));
+    _ranges.push_back(r);
   } else if (SINGLE == _state) {
     _ranges.push_back(_single);
-    _ranges.push_back(Range(low,high));
+    _ranges.push_back(r);
     _state = MULTI;
   } else {
-    _single._min = low;
-    _single._max = high;
+    _single = r;
     _state = SINGLE;
   }
   return *this;
@@ -2341,7 +2369,7 @@ HTTPRangeSpec::apply(uint64_t len)
 }
 
 int64_t
-HTTPRangeSpec::parseContentRange(char const* v, int len)
+HTTPRangeSpec::parseContentRangeFieldValue(char const* v, int len)
 {
   ts::ConstBuffer src(v, len);
   int64_t zret = -1;
@@ -2502,31 +2530,38 @@ HTTPRangeSpec::print(char* buff, size_t len) const
   return zret;
 }
 
-
-# if 0
-void
-HTTPInfo::get_missing_ranges(HTTPRangeSpec const& req, HTTPRangeSpec& missing)
+HTTPRangeSpec::Range
+HTTPInfo::get_range_for_frags(int low, int high)
 {
-  int64_t ffs = m_alt->m_fixed_fragment_size;
-  int32_t ridx = 0, lidx = this->get_frag_count()-1;
-  FragmentDescriptorTable& frags = *(this->get_frag_table());
-
-  missing.clear();
-  // For now we'll just compute the convex hull of the missing data.
-  for ( HTTPRangeSpec::const_iterator spot = req.begin(), limit = req.end() ; spot != limit ; ++spot ) {
-    int32_t lhs = spot->_min / ffs;
-    int32_t rhs = spot->_max / ffs;
-    while (lhs < lidx && lhs <= rhs && frags[lhs].m_flag.cached_p)
-      ++lhs;
-    if (lhs > rhs) continue; // All of this range is present.
-    while (rhs > ridx && frags[rhs].m_flag.cached_p) // must hit missing frag at lhs at the latest
-      --rhs;
-    // expand range if needed.
-    lidx = lhs;
-    ridx = rhs;
-  }
-  // if the convex hull of the missing ranges is non-empty, add it.
-  if (lidx <= ridx)
-    missing.add(lidx * ffs, ridx * ffs);
+  HTTPRangeSpec::Range zret;
+  FragmentAccessor frags = m_alt;
+  zret._min = (low < 1 ? 0 : frags[low].m_offset);
+  zret._max = (static_cast<uint>(high) >= m_alt->m_frag_count - 1 ? this->object_size_get() : frags[high+1].m_offset) - 1;
+  return zret;
 }
-# endif
+
+
+bool
+HTTPInfo::get_uncached(HTTPRangeSpec const& req, HTTPRangeSpec& result)
+{
+  bool zret = false;
+  if (m_alt && !m_alt->m_flag.complete_p) {
+    FragmentAccessor frags(m_alt);
+
+    for ( HTTPRangeSpec::const_iterator spot = req.begin(), limit = req.end() ; spot != limit ; ++spot ) {
+      int32_t lidx = this->get_frag_index_of(spot->_min);
+      int32_t ridx = this->get_frag_index_of(spot->_max);
+      while (lidx <= ridx && frags[lidx].m_flag.cached_p)
+        ++lidx;
+      if (lidx > ridx) continue; // All of this range is present.
+      while (lidx <= ridx && frags[ridx].m_flag.cached_p) // must hit missing frag at lhs at the latest
+        --ridx;
+
+      if (lidx <= ridx) {
+        result.add(this->get_range_for_frags(lidx, ridx));
+        zret = true;
+      }
+    }
+  }
+  return zret;
+}
