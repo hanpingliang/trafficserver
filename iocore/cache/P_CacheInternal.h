@@ -381,7 +381,7 @@ struct CacheVC: public CacheVConnection
   virtual void set_full_content_length(int64_t size);
   virtual HTTPRangeSpec& get_http_range_spec();
   virtual bool is_http_partial_content();
-  virtual bool get_uncached(HTTPRangeSpec& r);
+  virtual bool get_uncached(HTTPRangeSpec& result);
 
 #endif
 
@@ -434,7 +434,7 @@ struct CacheVC: public CacheVConnection
   LINK(CacheVC, stat_link);
 #endif
   CacheRange resp_range;          ///< Tracking information for range data for response.
-  CacheRange uncached_range;      ///< The ranges in the request that are not in cache.
+  //  CacheRange uncached_range;      ///< The ranges in the request that are not in cache.
   // end Region B
 
   // Start Region C

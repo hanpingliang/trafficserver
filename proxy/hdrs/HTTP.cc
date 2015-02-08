@@ -2102,12 +2102,14 @@ HTTPInfo::get_handle(char *buf, int len)
 }
 
 void
-HTTPInfo::mark_frag_write(int idx) {
+HTTPInfo::mark_frag_write(unsigned int idx) {
   FragmentDescriptor* frag;
   FragmentDescriptorTable* old_table = 0;
 
   ink_assert(m_alt);
   ink_assert(idx >= 0);
+
+  if (idx >= m_alt->m_frag_count) m_alt->m_frag_count = idx + 1;
 
   if (0 == idx) {
     m_alt->m_earliest.m_flag.cached_p = true;
@@ -2117,10 +2119,10 @@ HTTPInfo::mark_frag_write(int idx) {
       return;
     }
   } else {
-    if (0 == m_alt->m_fragments || idx > static_cast<int>(m_alt->m_fragments->m_n)) { // no room at the inn
+    if (0 == m_alt->m_fragments || idx > m_alt->m_fragments->m_n) { // no room at the inn
       int64_t obj_size = this->object_size_get();
       uint32_t ff_size = this->get_frag_fixed_size();
-      int n = 0; // set if we need to allocate, this is max array index needed.
+      unsigned int n = 0; // set if we need to allocate, this is max array index needed.
 
       ink_assert(ff_size);
 
@@ -2136,7 +2138,7 @@ HTTPInfo::mark_frag_write(int idx) {
 
       size_t size = FragmentDescriptorTable::calc_size(n);
       size_t old_size = 0;
-      int old_count = 0;
+      unsigned int old_count = 0;
       int64_t offset = 0;
       CryptoHash key;
 
@@ -2534,13 +2536,48 @@ HTTPRangeSpec::Range
 HTTPInfo::get_range_for_frags(int low, int high)
 {
   HTTPRangeSpec::Range zret;
-  FragmentAccessor frags = m_alt;
+  FragmentAccessor frags(m_alt);
   zret._min = (low < 1 ? 0 : frags[low].m_offset);
-  zret._max = (static_cast<uint>(high) >= m_alt->m_frag_count - 1 ? this->object_size_get() : frags[high+1].m_offset) - 1;
+  zret._max = (high >= static_cast<int>(m_alt->m_frag_count) - 1 ? this->object_size_get() : frags[high+1].m_offset) - 1;
   return zret;
 }
 
+/* Note - we're not handling unspecified content length and trailing segments at all here.
+   Must deal with that at some point.
+*/
 
+HTTPRangeSpec::Range
+HTTPInfo::get_uncached_hull(HTTPRangeSpec const& req)
+{
+  HTTPRangeSpec::Range r;
+
+  if (m_alt && !m_alt->m_flag.complete_p) {
+    FragmentAccessor frags(m_alt);
+    HTTPRangeSpec::Range s = req.getConvexHull();
+    int32_t lidx;
+    int32_t ridx;
+    if (s.isValid()) {
+      lidx = this->get_frag_index_of(s._min);
+      ridx = this->get_frag_index_of(s._max);
+    } else { // not a range request, get hull of all uncached fragments
+      lidx = frags.get_initial_cached_index();
+      // This really isn't valid if !content_length_p, need to deal with that at some point.
+      ridx = this->get_frag_index_of(this->object_size_get());
+    }
+
+    while (lidx <= ridx && frags[lidx].m_flag.cached_p)
+      ++lidx;
+    while (lidx <= ridx && frags[ridx].m_flag.cached_p)
+      --ridx;
+
+    if (lidx <= ridx) r = this->get_range_for_frags(lidx, ridx);
+    if (m_alt->m_flag.content_length_p && static_cast<int64_t>(r._max) > this->object_size_get())
+      r._max = this->object_size_get();
+  }
+  return r;
+}
+
+# if 0
 bool
 HTTPInfo::get_uncached(HTTPRangeSpec const& req, HTTPRangeSpec& result)
 {
@@ -2565,3 +2602,4 @@ HTTPInfo::get_uncached(HTTPRangeSpec const& req, HTTPRangeSpec& result)
   }
   return zret;
 }
+# endif

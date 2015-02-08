@@ -310,8 +310,8 @@ CacheHTTPInfoVector::waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t o
 /*-------------------------------------------------------------------------
   -------------------------------------------------------------------------*/
 
-bool
-CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec const& org, HTTPRangeSpec& result)
+HTTPRangeSpec::Range
+CacheHTTPInfoVector::get_uncached_hull(CacheKey const& alt_key, HTTPRangeSpec const& req)
 {
   int alt_idx = this->index_of(alt_key);
   Item& item = data[alt_idx];
@@ -320,7 +320,7 @@ CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec c
   CacheVC* cycle_vc = NULL;
   // Yeah, this need to be tunable.
   uint64_t DELTA = item._alternate.get_frag_fixed_size() * 16;
-  HTTPRangeSpec::Range r(org.getConvexHull());
+  HTTPRangeSpec::Range r(item._alternate.get_uncached_hull(req));
 
   if (r.isValid()) {
     /* Now clip against the writers.
@@ -334,11 +334,11 @@ CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec c
       uint64_t delta = static_cast<int64_t>(writers.head->resp_range.getRemnantSize());
 
       if (base+delta < r._min || base > r._max) {
-        item._writers.push(vc);
+        item._writers.push(vc); // of no use to us, just put it back.
       } else if (base < r._min + DELTA) {
         r._min = base + delta; // we can wait, so depend on this writer and clip.
         item._writers.push(vc); // we're done with it, put it back.
-        cycle_vc = NULL;
+        cycle_vc = NULL; // we did something so clear cycle indicator
       } else if (vc == cycle_vc) { // we're looping.
         item._writers.push(vc); // put this one back.
         while (NULL != (vc = writers.pop())) item._writers.push(vc); // and the rest.
@@ -348,11 +348,7 @@ CacheHTTPInfoVector::get_uncached_range(CacheKey const& alt_key, HTTPRangeSpec c
       }
     }
   }
-  result.clear();
-  if (r._min < r._max) {
-    result.add(r._min, r._max);
-  }
-  return !result.isEmpty();
+  return r;
 }
 
 /*-------------------------------------------------------------------------

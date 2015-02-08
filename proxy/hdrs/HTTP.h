@@ -535,7 +535,7 @@ struct HTTPRangeSpec {
     uint64_t _max;
 
     /// Default constructor - invalid range.
-    Range() : _min(UINT64_MAX), _max(0) { }
+    Range() : _min(UINT64_MAX), _max(1) { }
     /// Construct as the range ( @a low .. @a high )
     Range(uint64_t low, uint64_t high) : _min(low), _max(high) {}
 
@@ -1600,7 +1600,7 @@ struct HTTPCacheAlt
         Otherwise we may have to do a lot of work on a single fragment, but that' still better
         than doing it every time for every fragment.
     */
-    int32_t m_cached_idx;
+    uint32_t m_cached_idx;
 
     /// 1 based array operator.
     FragmentDescriptor& operator [] (int idx);
@@ -1621,6 +1621,17 @@ struct HTTPCacheAlt
     /// 0 based indexing of fragments.
     /// @note The earliest fragment is index 0.
     FragmentDescriptor& operator [] (int idx);
+
+    // Some utility routines because they're easier to put here than cut and paste.
+
+    /// Is the last byte cached?
+    ///
+    /// @return @c true if the last byte is cached, @c false if it isn't or we don't know the
+    /// content length (which means we don't know which byte is the last one).
+    bool is_last_byte_cached() const;
+
+    /// Safely get the last cached index of the cached initial segment.
+    uint32_t get_initial_cached_index() const;
 
     HTTPCacheAlt* _alt; ///< The source alternate.
     FragmentDescriptorTable* _table; ///< Table of non-earliest fragments.
@@ -1662,6 +1673,7 @@ struct HTTPCacheAlt
 
   /// # of fragments in the alternate, including the earliest fragment.
   /// This can be zero for a resident alternate.
+  /// @internal In practice this is really the high water mark for cached fragments.
   uint32_t m_frag_count;
 
   /** The target size for fragments in this alternate.
@@ -1772,15 +1784,13 @@ class HTTPInfo
   bool is_composite() const { return m_alt->m_flag.composite_p; }
   bool is_complete() const { return m_alt->m_flag.complete_p; }
 
-  /** Compute uncached ranges.
-      Given a request range spec compute a range spec for data that is not in the cache.
+  /** Compute the convex hull of uncached ranges.
 
-      @return @c true if any uncached range was found.
+      @return An invalid range if all of the request is available in cache.
   */
-  bool get_uncached(
-                    HTTPRangeSpec const& req ///< [in] UA request with content length applied
-                    , HTTPRangeSpec& missing ///< [out] data in @a req that is not cached 
-                    );
+  HTTPRangeSpec::Range get_uncached_hull(
+					 HTTPRangeSpec const& req ///< [in] UA request with content length applied
+					 );
 
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
@@ -1800,7 +1810,7 @@ class HTTPInfo
   /// Get the target fragment size.
   uint32_t get_frag_fixed_size() const;
   /// Mark a fragment at index @a idx as written to cache.
-  void mark_frag_write(int idx);
+  void mark_frag_write(unsigned int idx);
   /// Check if a fragment is cached.
   bool is_frag_cached(int idx);
   /// Get the range of bytes for the fragments from @a low to @a high.
@@ -2101,5 +2111,11 @@ inline HTTPCacheAlt::FragmentDescriptor&
 HTTPCacheAlt::FragmentAccessor::operator [] (int idx)
 {
   return idx == 0 ? _alt->m_earliest : (*_table)[idx];
+}
+
+inline uint32_t
+HTTPCacheAlt::FragmentAccessor::get_initial_cached_index() const
+{
+  return _table ? _table->m_cached_idx : 0;
 }
 #endif /* __HTTP_H__ */

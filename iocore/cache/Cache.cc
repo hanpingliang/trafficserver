@@ -496,15 +496,16 @@ bool CacheVC::set_pin_in_cache(time_t time_pin)
 }
 
 bool
-CacheVC::get_uncached(HTTPRangeSpec& r)
+CacheVC::get_uncached(HTTPRangeSpec& result)
 {
-  if (od) {
-    ink_assert(write_vector);
-    return write_vector->get_uncached_range(earliest_key, uncached_range.getRangeSpec(), r);
-  } else {
-    r = uncached_range.getRangeSpec();
-    return !r.isEmpty();
+  HTTPRangeSpec::Range r = od ? write_vector->get_uncached_hull(earliest_key, resp_range.getRangeSpec())
+    : alternate.get_uncached_hull(resp_range.getRangeSpec())
+    ;
+  if (r.isValid()) {
+    result.add(r);
+    return true;
   }
+  return false;
 }
 
 bool CacheVC::set_disk_io_priority(int priority)

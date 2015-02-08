@@ -1223,10 +1223,13 @@ CacheVC::openWriteCloseHead(int event, Event *e)
     ink_assert(fragment || (length == (int64_t)total_len));
   else
     return openWriteCloseDir(event, e);
-  if (f.data_done)
+  if (f.data_done) {
     write_len = 0;
-  else
+  } else {
     write_len = length;
+    // If we're writing data in the first / header doc, then it's a resident alt.
+    alternate.m_alt->m_flag.complete_p = true;
+  }
 #ifdef HTTP_CACHE
   if (frag_type == CACHE_FRAG_TYPE_HTTP) {
     SET_HANDLER(&CacheVC::updateVector);

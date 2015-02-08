@@ -1234,7 +1234,7 @@ CacheVC::openReadStartHead(int event, Event * e)
       }
       if (resp_range.isMulti())
         resp_range.setContentTypeFromResponse(alternate.response_get()).generateBoundaryStr(earliest_key);
-      alternate.get_uncached(resp_range.getRangeSpec(), uncached_range.getRangeSpec());
+//      alternate.get_uncached(resp_range.getRangeSpec(), uncached_range.getRangeSpec());
 
       if (key == doc->key) {      // is this my data?
         f.single_fragment = doc->single_fragment();
