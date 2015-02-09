@@ -1624,11 +1624,9 @@ struct HTTPCacheAlt
 
     // Some utility routines because they're easier to put here than cut and paste.
 
-    /// Is the last byte cached?
-    ///
-    /// @return @c true if the last byte is cached, @c false if it isn't or we don't know the
-    /// content length (which means we don't know which byte is the last one).
-    bool is_last_byte_cached() const;
+    /// Check if a fragment is already cached.
+    /// @return @c true if it is cached, @c false if not cached or not present.
+    bool is_frag_cached(unsigned int idx) const;
 
     /// Safely get the last cached index of the cached initial segment.
     uint32_t get_initial_cached_index() const;
@@ -2117,5 +2115,13 @@ inline uint32_t
 HTTPCacheAlt::FragmentAccessor::get_initial_cached_index() const
 {
   return _table ? _table->m_cached_idx : 0;
+}
+
+inline bool
+HTTPCacheAlt::FragmentAccessor::is_frag_cached(unsigned int idx) const
+{
+  return (0 == idx && _alt->m_earliest.m_flag.cached_p) ||
+    (_table && idx < _table->m_n && (*_table)[idx].m_flag.cached_p)
+    ;
 }
 #endif /* __HTTP_H__ */

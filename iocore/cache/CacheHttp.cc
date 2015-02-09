@@ -260,6 +260,9 @@ CacheHTTPInfoVector::write_active(CacheKey const& alt_key, CacheVC* vc, int64_t 
 {
   int idx = this->index_of(alt_key);
   Item& item = data[idx];
+
+  Debug("amc", "[CacheHTTPInfoVector::write_actgive] VC %p write %" PRId64, vc, offset);
+
   vc->fragment = item._alternate.get_frag_index_of(offset);
   item._active.push(vc);
   return *this;
@@ -273,6 +276,9 @@ CacheHTTPInfoVector::write_complete(CacheKey const& alt_key, CacheVC* vc, bool s
 {
   int idx = this->index_of(alt_key);
   Item& item = data[idx];
+
+  Debug("amc", "[CacheHTTPInfoVector::write_complete] VC %p write %s", vc, (success ? "succeeded" : "failed"));
+
   item._active.remove(vc);
   if (success) item._alternate.mark_frag_write(vc->fragment);
   return *this;

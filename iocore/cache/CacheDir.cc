@@ -89,6 +89,7 @@ OpenDir::open_write(CacheVC *cont, int /* allow_if_writers */, int /* max_writer
                                   cont->mutex->thread_holding);
 //  od->readers.head = NULL;
 //  od->writers.push(cont);
+  od->mutex = new_ProxyMutex();
   od->first_key = cont->first_key;
   od->num_writers = 1;
 //  od->max_writers = max_writers;
@@ -141,6 +142,7 @@ OpenDir::close_write(CacheVC *cont)
 //    delayed_readers.append(cont->od->readers);
     signal_readers(0, 0);
     cont->od->vector.clear();
+    cont->mutex = 0;
     THREAD_FREE(cont->od, openDirEntryAllocator, cont->mutex->thread_holding);
   }
   cont->od = NULL;
@@ -180,6 +182,7 @@ OpenDirEntry::index_of(CacheKey const& alt_key)
 OpenDirEntry&
 OpenDirEntry::write_active(CacheKey const& alt_key, CacheVC* vc, int64_t offset)
 {
+  Debug("amc", "VC %p write active @ %" PRId64, vc, offset);
   vector.write_active(alt_key, vc, offset);
   return *this;
 }
@@ -187,6 +190,7 @@ OpenDirEntry::write_active(CacheKey const& alt_key, CacheVC* vc, int64_t offset)
 OpenDirEntry&
 OpenDirEntry::write_complete(CacheKey const& alt_key, CacheVC* vc, bool success)
 {
+  Debug("amc", "[OpenDir::write_complete] VC %p write %s", vc, (success ? "succeeded" : "failed"));
   vector.write_complete(alt_key, vc, success);
   return *this;
 }
@@ -206,6 +210,7 @@ OpenDirEntry::key_for(CacheKey const& alt_key, int64_t offset)
 OpenDirEntry&
 OpenDirEntry::waiting_for(CacheKey const& alt_key, CacheVC* vc, int64_t offset)
 {
+  Debug("amc", "vc %p waiting for %" PRId64, vc, offset);
   vector.waiting_for(alt_key, vc, offset);
   return *this;
 }

@@ -324,7 +324,7 @@ Vol::aggWriteDone(int event, Event *e)
     header->last_write_pos = header->write_pos;
     header->write_pos += io.aiocb.aio_nbytes;
     ink_assert(header->write_pos >= start);
-    DDebug("cache_agg", "Dir %s, Write: %" PRIu64 ", last Write: %" PRIu64 "\n",
+    Debug("cache_agg", "Dir %s, Write: %" PRIu64 ", last Write: %" PRIu64 "\n",
           hash_text.get(), header->write_pos, header->last_write_pos);
     ink_assert(header->write_pos == header->agg_pos);
     if (header->write_pos + EVACUATION_SIZE > scan_pos)
@@ -742,7 +742,7 @@ agg_copy(char *p, CacheVC *vc)
     IOBufferBlock *res_alt_blk = 0;
 
     uint32_t len = vc->write_len + vc->header_len + vc->frag_len + sizeofDoc;
-    ink_assert(vc->frag_type != CACHE_FRAG_TYPE_HTTP || len != sizeofDoc); // need to tweak
+    ink_assert(vc->frag_type != CACHE_FRAG_TYPE_HTTP || len != sizeofDoc || 0 == vc->fragment);
     ink_assert(vol->round_to_approx_size(len) == vc->agg_len);
     // update copy of directory entry for this document
     dir_set_approx_size(&vc->dir, vc->agg_len);
@@ -1406,6 +1406,9 @@ Lagain:
   int64_t total_avail = vio.buffer.reader()->read_avail();
   int64_t avail = total_avail;
   int64_t towrite = avail + length;
+
+  Debug("amc", "[CacheVC::openWriteMain] ntodo=%" PRId64 " avail=%" PRId64 " towrite=%" PRId64, ntodo, avail, towrite);
+
   if (towrite > ntodo) {
     avail -= (towrite - ntodo);
     towrite = ntodo;
@@ -1424,6 +1427,7 @@ Lagain:
     total_len += avail;
   }
   length = (uint64_t)towrite;
+  // [amc] Need to change this to be exactly the fixed fragment size for this alternate.
   if (length > target_fragment_size() &&
       (length < target_fragment_size() + target_fragment_size() / 4))
     write_len = target_fragment_size();
@@ -1442,8 +1446,6 @@ Lagain:
   if (not_writing)
     return EVENT_CONT;
 
-  SET_HANDLER(&CacheVC::openWriteWriteDone);
-  
   {
     CacheHTTPInfo *alt = 0;
     MUTEX_LOCK(lock, od->mutex, this_ethread());
@@ -1453,28 +1455,41 @@ Lagain:
       alternate_index = write_vector->insert(&alternate, alternate_index);
 
     alt = write_vector->get(alternate_index);
-    if (!alt->m_alt->m_earliest.m_flag.cached_p) {
+
+    if (fragment != 0 && !alt->m_alt->m_earliest.m_flag.cached_p) {
       SET_HANDLER(&CacheVC::openWriteEmptyEarliestDone);
       if (!od->is_write_active(earliest_key, 0)) {
         write_len = 0;
         key = earliest_key;
-        towrite = -1; // disable end check, since it's not the end.
+        Debug("amc", "[CacheVC::openWriteMain] writing empty earliest");
       } else {
         // go on the wait list
         od->waiting_for(earliest_key, this, 0);
+        not_writing = true;
       }
     } else if (od->is_write_active(earliest_key, write_pos)) {
       od->waiting_for(earliest_key, this, write_pos);
+      not_writing = true;
+    } else if (HTTPInfo::FragmentAccessor(alt->m_alt).is_frag_cached(fragment)) {
+      not_writing = true;
     } else {
-      // [amc] check if anyone is ever going to write to this fragment
       od->write_active(earliest_key, this, write_pos);
     }
   }
+
+  if (0 == write_len) // need to set up the write not under OpenDir lock.
+    return do_write_lock_call();
+
   if (towrite == ntodo && f.close_complete) {
     closed = 1;
     SET_HANDLER(&CacheVC::openWriteClose);
     return openWriteClose(EVENT_NONE, NULL);
+  } else if (not_writing) {
+    return EVENT_CONT;
   }
+
+  SET_HANDLER(&CacheVC::openWriteWriteDone);
+  Debug("amc", "[CacheVC::openWriteMain] doing write call");
   return do_write_lock_call();
 }
 
