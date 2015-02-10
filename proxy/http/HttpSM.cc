@@ -5594,16 +5594,24 @@ HttpSM::perform_cache_write_action()
     }
 
   case HttpTransact::CACHE_DO_WRITE:
-  case HttpTransact::CACHE_DO_REPLACE:
+  {
+    HTTPRangeSpec& rs = cache_sm.cache_write_vc->get_http_range_spec();
     // Fix need to set up delete for after cache write has
     //   completed
+
+    // Get the incoming range to store from the origin.
     if (NULL != (field = t_state.hdr_info.server_response.field_find(MIME_FIELD_CONTENT_RANGE, MIME_LEN_CONTENT_RANGE))) {
       int len;
       char const* cr = field->value_get(&len);
-      int64_t cl = cache_sm.cache_write_vc->get_http_range_spec().parseContentRangeFieldValue(cr, len);
+      int64_t cl = rs.parseContentRangeFieldValue(cr, len);
       cache_sm.cache_write_vc->set_full_content_length(cl);
       
+    } else if (t_state.hdr_info.request_content_length != HTTP_UNDEFINED_CL) {
+      rs.add(0, t_state.hdr_info.request_content_length - 1);
+    } else { // unknown length
+      rs.add(0, UINT64_MAX);
     }
+
     if (transform_info.entry == NULL || t_state.api_info.cache_untransformed == true) {
       if (cache_sm.cache_read_vc && cache_sm.cache_read_vc->is_http_partial_content()) {
         HttpTunnelProducer *p = setup_cache_read_transfer();
@@ -5623,7 +5631,7 @@ HttpSM::perform_cache_write_action()
       cache_sm.cache_write_vc = NULL;
     }
     break;
-
+  }
   default:
     ink_release_assert(0);
     break;

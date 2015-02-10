@@ -1366,10 +1366,12 @@ CacheVC::openWriteWriteDone(int event, Event *e)
     write_vector->write_complete(earliest_key, this, true);
   }
 
-  write_pos += write_len;
   DDebug("cache_insert", "WriteDone: %X, %X, %d", key.slice32(0), first_key.slice32(0), write_len);
+
+  write_pos = resp_range.consume(write_len);
+  key = alternate.get_frag_key_of(write_pos);
+
   blocks = iobufferblock_skip(blocks, &offset, &length, write_len);
-  next_CacheKey(&key, &key);
 
   if (closed)
     return die();
@@ -1379,6 +1381,18 @@ CacheVC::openWriteWriteDone(int event, Event *e)
 
 static inline int target_fragment_size() {
   return cache_config_target_fragment_size - sizeofDoc;
+}
+
+/* Do some initial setup and then switch over to openWriteMain
+ */
+int
+CacheVC::openWriteInit(int eid, Event* event)
+{
+  if (resp_range.hasRanges()) resp_range.start();
+//  write_pos = resp_range.getOffset();
+//  key = alternate.get_frag_key_of(write_pos);
+  SET_HANDLER(&CacheVC::openWriteMain);
+  return openWriteMain(eid, event);
 }
 
 int
@@ -1402,6 +1416,7 @@ Lagain:
     if (vio.ntodo() <= 0)
       return EVENT_CONT;
   }
+
   int64_t ntodo = (int64_t)(vio.ntodo() + length);
   int64_t total_avail = vio.buffer.reader()->read_avail();
   int64_t avail = total_avail;
@@ -1421,6 +1436,7 @@ Lagain:
     blocks = vio.buffer.reader()->block;
     offset = vio.buffer.reader()->start_offset;
   }
+
   if (avail > 0) {
     vio.buffer.reader()->consume(avail);
     vio.ndone += avail;
@@ -1445,6 +1461,14 @@ Lagain:
   }
   if (not_writing)
     return EVENT_CONT;
+
+  // Make sure we're tracking the incoming data.
+  // We need to keep an eye out for range boundaries with regard to this too.
+  if (resp_range.hasPendingRangeShift()) {
+    resp_range.consumeRangeShift();
+    write_pos = resp_range.getOffset();
+    key = alternate.get_frag_key_of(write_pos);
+  }
 
   {
     CacheHTTPInfo *alt = 0;
@@ -1472,6 +1496,8 @@ Lagain:
       not_writing = true;
     } else if (HTTPInfo::FragmentAccessor(alt->m_alt).is_frag_cached(fragment)) {
       not_writing = true;
+      resp_range.consume(length); // just drop it.
+      // Need to consume the actual data too (in blocks/offset).
     } else {
       od->write_active(earliest_key, this, write_pos);
     }
@@ -1528,7 +1554,7 @@ Lcollision:
     }
   }
 Ldone:
-  SET_HANDLER(&CacheVC::openWriteMain);
+  SET_HANDLER(&CacheVC::openWriteInit);
   return callcont(CACHE_EVENT_OPEN_WRITE);
 Lcallreturn:
   return handleEvent(AIO_EVENT_DONE, 0); // hopefully a tail call
@@ -1626,7 +1652,7 @@ Lcollision:
         goto Lfailure;
       if (od->has_multiple_writers()) {
         MUTEX_RELEASE(lock);
-        SET_HANDLER(&CacheVC::openWriteMain);
+        SET_HANDLER(&CacheVC::openWriteInit);
         return callcont(CACHE_EVENT_OPEN_WRITE);
       }
     }
@@ -1647,7 +1673,7 @@ Lsuccess:
   od->reading_vec = 0;
   if (_action.cancelled)
     goto Lcancel;
-  SET_HANDLER(&CacheVC::openWriteMain);
+  SET_HANDLER(&CacheVC::openWriteInit);
   return callcont(CACHE_EVENT_OPEN_WRITE);
 
 Lfailure:
@@ -1685,7 +1711,7 @@ CacheVC::openWriteStartBegin(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED 
     return openWriteOverwrite(EVENT_IMMEDIATE, 0);
   } else {
     // write by key
-    SET_HANDLER(&CacheVC::openWriteMain);
+    SET_HANDLER(&CacheVC::openWriteInit);
     return callcont(CACHE_EVENT_OPEN_WRITE);
   }
 }
@@ -1746,7 +1772,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheFragType frag_type,
     return &c->_action;
   }
   if (!c->f.overwrite) {
-    SET_CONTINUATION_HANDLER(c, &CacheVC::openWriteMain);
+    SET_CONTINUATION_HANDLER(c, &CacheVC::openWriteInit);
     c->callcont(CACHE_EVENT_OPEN_WRITE);
     return ACTION_RESULT_DONE;
   } else {
@@ -1871,7 +1897,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheHTTPInfo *info, time_t
   }
 
 Lmiss:
-  SET_CONTINUATION_HANDLER(c, &CacheVC::openWriteMain);
+  SET_CONTINUATION_HANDLER(c, &CacheVC::openWriteInit);
   c->callcont(CACHE_EVENT_OPEN_WRITE);
   return ACTION_RESULT_DONE;
 

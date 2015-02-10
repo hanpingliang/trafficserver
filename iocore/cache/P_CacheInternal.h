@@ -321,6 +321,7 @@ struct CacheVC: public CacheVConnection
   int openWriteRemoveVector(int event, Event *e);
   int openWriteWriteDone(int event, Event *e);
   int openWriteOverwrite(int event, Event *e);
+  int openWriteInit(int event, Event* e);
   int openWriteMain(int event, Event *e);
   int openWriteStartDone(int event, Event *e);
   int openWriteStartBegin(int event, Event *e);

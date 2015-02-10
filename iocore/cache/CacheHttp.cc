@@ -261,7 +261,7 @@ CacheHTTPInfoVector::write_active(CacheKey const& alt_key, CacheVC* vc, int64_t 
   int idx = this->index_of(alt_key);
   Item& item = data[idx];
 
-  Debug("amc", "[CacheHTTPInfoVector::write_actgive] VC %p write %" PRId64, vc, offset);
+  Debug("amc", "[CacheHTTPInfoVector::write_active] VC %p write %" PRId64, vc, offset);
 
   vc->fragment = item._alternate.get_frag_index_of(offset);
   item._active.push(vc);
@@ -379,6 +379,19 @@ CacheRange::init(HTTPHdr* req)
     int len;
     char const* val = rf->value_get(&len);
     zret = _r.parseRangeFieldValue(val, len);
+  }
+  return zret;
+}
+
+bool
+CacheRange::start()
+{
+  bool zret = false;
+
+  if (_r.hasRanges()) {
+    _offset = _r[_idx = 0]._min;
+    _pending_range_shift_p = true;
+    zret = true;
   }
   return zret;
 }

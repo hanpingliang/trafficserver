@@ -1793,6 +1793,7 @@ class HTTPInfo
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
   /// the indexing starts with the second (non-earliest) fragment.
+  /// @deprecated - use @c FragmentAccessor.
   FragmentDescriptorTable* get_frag_table();
 
   /// Get the fragment index for @a offset.
@@ -1907,13 +1908,13 @@ HTTPInfo::get_frag_key_of(int64_t offset)
 inline CryptoHash const&
 HTTPInfo::get_frag_key(int idx)
 {
-  return (*m_alt->m_fragments)[idx].m_key;
+  return 0 == idx ? m_alt->m_earliest.m_key : (*m_alt->m_fragments)[idx].m_key;
 }
 
 inline bool
 HTTPInfo::is_frag_cached(int idx)
 {
-  return (*m_alt->m_fragments)[idx].m_flag.cached_p;
+  return 0 == idx ? m_alt->m_earliest.m_flag.cached_p : (*m_alt->m_fragments)[idx].m_flag.cached_p;
 }
 
 inline

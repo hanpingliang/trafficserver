@@ -190,6 +190,11 @@ class CacheRange
    */
   bool init(HTTPHdr* req);
 
+  /** Set the range to the start of the range set.
+      @return @c true if there is a valid range, @c false otherwise.
+  */
+  bool start();
+
   /** Apply a content @a len to the ranges.
 
       @return @c true if successfully applied, @c false otherwise.
