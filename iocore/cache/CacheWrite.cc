@@ -68,7 +68,7 @@ CacheVC::updateVector(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED */)
     VC_SCHED_LOCK_RETRY();
   int ret = 0;
   {
-    CACHE_TRY_LOCK(lock, vol->mutex, mutex->thread_holding);
+    CACHE_TRY_LOCK(lock, od->mutex, mutex->thread_holding);
     if (!lock.is_locked() || od->writing_vec)
       VC_SCHED_LOCK_RETRY();
 
@@ -102,13 +102,6 @@ CacheVC::updateVector(int /* event ATS_UNUSED */, Event */* e ATS_UNUSED */)
       write_vector->remove(0, true);
     }
     if (vec) {
-      /* preserve fragment offset data from old info. This method is
-         called iff the update is a header only update so the fragment
-         data should remain valid.
-      */
-      if (alternate_index >= 0)
-//        alternate.copy_frag_offsets_from(write_vector->get(alternate_index));
-        ink_release_assert(! "[amc] You need to deal with fragment table copying!");
       alternate_index = write_vector->insert(&alternate, alternate_index);
     }
 
@@ -1321,6 +1314,7 @@ CacheVC::openWriteClose(int event, Event *e)
     }
     if (length && (fragment || length > MAX_FRAG_SIZE)) {
       SET_HANDLER(&CacheVC::openWriteCloseDataDone);
+      this->updateWriteStateFromRange();
       write_len = length;
       if (write_len > MAX_FRAG_SIZE)
         write_len = MAX_FRAG_SIZE;
@@ -1368,9 +1362,7 @@ CacheVC::openWriteWriteDone(int event, Event *e)
 
   DDebug("cache_insert", "WriteDone: %X, %X, %d", key.slice32(0), first_key.slice32(0), write_len);
 
-  write_pos = resp_range.consume(write_len);
-  key = alternate.get_frag_key_of(write_pos);
-
+  resp_range.consume(write_len);
   blocks = iobufferblock_skip(blocks, &offset, &length, write_len);
 
   if (closed)
@@ -1462,18 +1454,12 @@ Lagain:
   if (not_writing)
     return EVENT_CONT;
 
-  // Make sure we're tracking the incoming data.
-  // We need to keep an eye out for range boundaries with regard to this too.
-  if (resp_range.hasPendingRangeShift()) {
-    resp_range.consumeRangeShift();
-    write_pos = resp_range.getOffset();
-    key = alternate.get_frag_key_of(write_pos);
-  }
-
+  ink_assert(static_cast<int64_t>(write_pos) == alternate.get_frag_offset(fragment));
   {
     CacheHTTPInfo *alt = 0;
     MUTEX_LOCK(lock, od->mutex, this_ethread());
 
+    this->updateWriteStateFromRange();
     alternate_index = get_alternate_index(write_vector, earliest_key);
     if (alternate_index < 0)
       alternate_index = write_vector->insert(&alternate, alternate_index);
@@ -1494,9 +1480,10 @@ Lagain:
     } else if (od->is_write_active(earliest_key, write_pos)) {
       od->waiting_for(earliest_key, this, write_pos);
       not_writing = true;
-    } else if (HTTPInfo::FragmentAccessor(alt->m_alt).is_frag_cached(fragment)) {
+    } else if (alternate.is_frag_cached(fragment)) {
       not_writing = true;
       resp_range.consume(length); // just drop it.
+      Debug("amc", "Fragment %d already cached", fragment);
       // Need to consume the actual data too (in blocks/offset).
     } else {
       od->write_active(earliest_key, this, write_pos);
@@ -1782,6 +1769,21 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheFragType frag_type,
     else
       return &c->_action;
   }
+}
+
+int
+CacheVC::updateWriteStateFromRange()
+{
+  if (resp_range.hasPendingRangeShift())
+    resp_range.consumeRangeShift();
+  write_pos = resp_range.getOffset();
+  fragment = alternate.get_frag_index_of(write_pos);
+  key = alternate.get_frag_key(fragment);
+  {
+    char tmp[64];
+    Debug("amc", "[writeMain] pos=%" PRId64 " frag=%d/%" PRId64 " key=%s", write_pos, fragment, alternate.get_frag_offset(fragment), key.toHexStr(tmp));
+  }
+  return write_pos;
 }
 
 #ifdef HTTP_CACHE

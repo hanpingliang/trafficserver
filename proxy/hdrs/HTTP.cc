@@ -2101,11 +2101,67 @@ HTTPInfo::get_handle(char *buf, int len)
   return -1;
 }
 
-void
-HTTPInfo::mark_frag_write(unsigned int idx) {
+HTTPInfo::FragmentDescriptor*
+HTTPInfo::force_frag_at(unsigned int idx) {
   FragmentDescriptor* frag;
   FragmentDescriptorTable* old_table = 0;
 
+  ink_assert(m_alt);
+  ink_assert(idx >= 0);
+
+  if (0 == idx) return &m_alt->m_earliest;
+
+  if (0 == m_alt->m_fragments || idx > m_alt->m_fragments->m_n) { // no room at the inn
+    int64_t obj_size = this->object_size_get();
+    uint32_t ff_size = this->get_frag_fixed_size();
+    unsigned int n = 0; // set if we need to allocate, this is max array index needed.
+
+    ink_assert(ff_size);
+
+    if (0 == m_alt->m_fragments && obj_size > 0) {
+      n = (obj_size + ff_size - 1) / ff_size;
+      if (idx > n) n = idx;
+      if (!m_alt->m_earliest.m_flag.cached_p) ++n; // going to have an empty earliest fragment.
+    } else {
+      n = idx + MAX(4, idx>>1); // grow by 50% and at least 4
+      old_table = m_alt->m_fragments;
+    }
+
+    size_t size = FragmentDescriptorTable::calc_size(n);
+    size_t old_size = 0;
+    unsigned int old_count = 1;
+    int64_t offset = 0;
+    CryptoHash key;
+
+    m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
+    if (old_table) {
+      old_count = old_table->m_n;
+      frag = &((*old_table)[old_count - 1]);
+      offset = frag->m_offset;
+      key = frag->m_key;
+      old_size = FragmentDescriptorTable::calc_size(old_count);
+      memcpy(m_alt->m_fragments, old_table, old_size);
+      ats_free(old_table);
+    } else {
+      key = m_alt->m_earliest.m_key;
+      m_alt->m_fragments->m_cached_idx = 0;
+    }
+    m_alt->m_fragments->m_n = n;
+    m_alt->m_flag.table_allocated_p = true;
+    // fill out the new parts with offsets & keys.
+    for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count <= n ; ++old_count, ++frag ) {
+      key.next();
+      offset += ff_size;
+      frag->m_key = key;
+      frag->m_offset = offset;
+    }
+  }
+  ink_assert(idx > m_alt->m_fragments->m_cached_idx);
+  return &(*m_alt->m_fragments)[idx];
+}
+
+void
+HTTPInfo::mark_frag_write(unsigned int idx) {
   ink_assert(m_alt);
   ink_assert(idx >= 0);
 
@@ -2119,60 +2175,10 @@ HTTPInfo::mark_frag_write(unsigned int idx) {
       return;
     }
   } else {
-    if (0 == m_alt->m_fragments || idx > m_alt->m_fragments->m_n) { // no room at the inn
-      int64_t obj_size = this->object_size_get();
-      uint32_t ff_size = this->get_frag_fixed_size();
-      unsigned int n = 0; // set if we need to allocate, this is max array index needed.
-
-      ink_assert(ff_size);
-
-      if (0 == m_alt->m_fragments && obj_size > 0) {
-        // Get the fragment size from the earliest fragment.
-        n = (obj_size + ff_size - 1) / ff_size;
-        if (idx > n) n = idx;
-        ++n; // account for possible empty earliest.
-      } else {
-        n = idx + MAX(4, idx>>1); // grow by 50% and at least 4
-        old_table = m_alt->m_fragments;
-      }
-
-      size_t size = FragmentDescriptorTable::calc_size(n);
-      size_t old_size = 0;
-      unsigned int old_count = 0;
-      int64_t offset = 0;
-      CryptoHash key;
-
-      m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
-      if (old_table) {
-        old_count = old_table->m_n;
-        frag = &((*old_table)[old_count - 1]);
-        offset = frag->m_offset;
-        key = frag->m_key;
-        old_size = FragmentDescriptorTable::calc_size(old_count);
-        memcpy(m_alt->m_fragments, old_table, old_size);
-        ats_free(old_table);
-      } else {
-        key = m_alt->m_earliest.m_key;
-        m_alt->m_fragments->m_cached_idx = 0;
-      }
-      m_alt->m_fragments->m_n = n;
-      m_alt->m_flag.table_allocated_p = true;
-      // fill out the new parts with offsets & keys.
-      for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count < n ; ++old_count, ++frag ) {
-        key.next();
-        offset += ff_size;
-        frag->m_key = key;
-        frag->m_offset = offset;
-      }
-    }
-    ink_assert(idx > m_alt->m_fragments->m_cached_idx);
-
-    (*m_alt->m_fragments)[idx].m_flag.cached_p = true;
+    this->force_frag_at(idx)->m_flag.cached_p = true;
   }
 
   // bump the last cached value if possible and mark complete if appropriate.
-  // Should this be moved to OpenDir? Or is it advantageous to write this to disk even though
-  // technically it duplicates complete_p (or should we remove complete_p and use m_cached_idx >= m_frag_count ?
   if (m_alt->m_fragments && idx == m_alt->m_fragments->m_cached_idx + 1) {
     unsigned int j = idx + 1;
     while (j < m_alt->m_frag_count && (*m_alt->m_fragments)[j].m_flag.cached_p)
@@ -2536,9 +2542,9 @@ HTTPRangeSpec::Range
 HTTPInfo::get_range_for_frags(int low, int high)
 {
   HTTPRangeSpec::Range zret;
-  FragmentAccessor frags(m_alt);
-  zret._min = (low < 1 ? 0 : frags[low].m_offset);
-  zret._max = (high >= static_cast<int>(m_alt->m_frag_count) - 1 ? this->object_size_get() : frags[high+1].m_offset) - 1;
+  zret._min = low < 1 ? 0 : (*m_alt->m_fragments)[low].m_offset;
+  zret._max = (high >= static_cast<int>(m_alt->m_frag_count) - 1 ? this->object_size_get()
+               : (*m_alt->m_fragments)[high+1].m_offset) - 1;
   return zret;
 }
 
@@ -2552,7 +2558,6 @@ HTTPInfo::get_uncached_hull(HTTPRangeSpec const& req)
   HTTPRangeSpec::Range r;
 
   if (m_alt && !m_alt->m_flag.complete_p) {
-    FragmentAccessor frags(m_alt);
     HTTPRangeSpec::Range s = req.getConvexHull();
     int32_t lidx;
     int32_t ridx;
@@ -2560,15 +2565,15 @@ HTTPInfo::get_uncached_hull(HTTPRangeSpec const& req)
       lidx = this->get_frag_index_of(s._min);
       ridx = this->get_frag_index_of(s._max);
     } else { // not a range request, get hull of all uncached fragments
-      lidx = frags.get_initial_cached_index();
+      lidx = m_alt->m_fragments ? m_alt->m_fragments->m_cached_idx + 1 : 1;
       // This really isn't valid if !content_length_p, need to deal with that at some point.
       ridx = this->get_frag_index_of(this->object_size_get());
     }
 
-    while (lidx <= ridx && frags[lidx].m_flag.cached_p)
-      ++lidx;
-    while (lidx <= ridx && frags[ridx].m_flag.cached_p)
-      --ridx;
+    if (lidx < 2 && !m_alt->m_earliest.m_flag.cached_p) lidx = 0;
+    else while (lidx <= ridx && (*m_alt->m_fragments)[lidx].m_flag.cached_p) ++lidx;
+
+    while (lidx <= ridx && (*m_alt->m_fragments)[ridx].m_flag.cached_p) --ridx;
 
     if (lidx <= ridx) r = this->get_range_for_frags(lidx, ridx);
     if (m_alt->m_flag.content_length_p && static_cast<int64_t>(r._max) > this->object_size_get())

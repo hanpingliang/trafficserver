@@ -1608,33 +1608,6 @@ struct HTTPCacheAlt
     static size_t calc_size(uint32_t n);
   };
 
-  /** Accessor for fragments because earliest (index 0) is special.
-
-      This tries to get the best of not indirecting through this structure by directly accessing
-      the fragment table while making the external API (0-based indexing) simple. We can't put this
-      in the @c FragmentDescriptorTable itself because that gets serialized.
-  */
-  struct FragmentAccessor
-  {
-    /// Construct from an alternate instance.
-    FragmentAccessor(HTTPCacheAlt*);
-    /// 0 based indexing of fragments.
-    /// @note The earliest fragment is index 0.
-    FragmentDescriptor& operator [] (int idx);
-
-    // Some utility routines because they're easier to put here than cut and paste.
-
-    /// Check if a fragment is already cached.
-    /// @return @c true if it is cached, @c false if not cached or not present.
-    bool is_frag_cached(unsigned int idx) const;
-
-    /// Safely get the last cached index of the cached initial segment.
-    uint32_t get_initial_cached_index() const;
-
-    HTTPCacheAlt* _alt; ///< The source alternate.
-    FragmentDescriptorTable* _table; ///< Table of non-earliest fragments.
-  };
-
   HTTPCacheAlt();
 
   void copy(HTTPCacheAlt *to_copy);
@@ -1719,7 +1692,6 @@ class HTTPInfo
  public:
   typedef HTTPCacheAlt::FragmentDescriptor FragmentDescriptor; ///< Import type.
   typedef HTTPCacheAlt::FragmentDescriptorTable FragmentDescriptorTable; ///< Import type.
-  typedef HTTPCacheAlt::FragmentAccessor FragmentAccessor; ///< Import type.
 
   HTTPCacheAlt *m_alt;
 
@@ -1793,15 +1765,22 @@ class HTTPInfo
   /// Get the fragment table.
   /// @note There is a fragment table only for multi-fragment alternates @b and
   /// the indexing starts with the second (non-earliest) fragment.
-  /// @deprecated - use @c FragmentAccessor.
+  /// @deprecated - use specialized methods.
   FragmentDescriptorTable* get_frag_table();
+
+  /// Force a descriptor at index @a idx.
+  FragmentDescriptor* force_frag_at(unsigned int idx);
 
   /// Get the fragment index for @a offset.
   int get_frag_index_of(int64_t offset);
   /// Get the fragment key for an @a offset.
+  /// @note Forces fragment.
   CryptoHash const& get_frag_key_of(int64_t offset);
   /// Get the fragment key of the @a idx fragment.
-  CryptoHash const& get_frag_key(int idx);
+  /// @note Forces fragment.
+  CryptoHash const& get_frag_key(unsigned int idx);
+  /// Get the starting offset of a fragment.
+  int64_t get_frag_offset(unsigned int idx);
 
   /// Get the number of fragments.
   /// 0 means resident alternate, 1 means single fragment, > 1 means multi-fragment.
@@ -1811,7 +1790,7 @@ class HTTPInfo
   /// Mark a fragment at index @a idx as written to cache.
   void mark_frag_write(unsigned int idx);
   /// Check if a fragment is cached.
-  bool is_frag_cached(int idx);
+  bool is_frag_cached(unsigned int idx) const;
   /// Get the range of bytes for the fragments from @a low to @a high.
   HTTPRangeSpec::Range get_range_for_frags(int low, int high);
 
@@ -1906,15 +1885,23 @@ HTTPInfo::get_frag_key_of(int64_t offset)
 }
 
 inline CryptoHash const&
-HTTPInfo::get_frag_key(int idx)
+HTTPInfo::get_frag_key(unsigned int idx)
 {
-  return 0 == idx ? m_alt->m_earliest.m_key : (*m_alt->m_fragments)[idx].m_key;
+  return 0 == idx ? m_alt->m_earliest.m_key : this->force_frag_at(idx)->m_key;
+}
+
+inline int64_t
+HTTPInfo::get_frag_offset(unsigned int idx)
+{
+  return 0 == idx ? 0 : (*m_alt->m_fragments)[idx].m_offset;
 }
 
 inline bool
-HTTPInfo::is_frag_cached(int idx)
+HTTPInfo::is_frag_cached(unsigned int idx) const
 {
-  return 0 == idx ? m_alt->m_earliest.m_flag.cached_p : (*m_alt->m_fragments)[idx].m_flag.cached_p;
+  return m_alt && ((0 == idx && m_alt->m_earliest.m_flag.cached_p) ||
+		   (m_alt->m_fragments && idx < m_alt->m_fragments->m_n && (*m_alt->m_fragments)[idx].m_flag.cached_p))
+    ;
 }
 
 inline
@@ -2100,6 +2087,7 @@ HTTPCacheAlt::FragmentDescriptorTable::calc_size(uint32_t n)
   return n <= 1 ? 0 : sizeof(FragmentDescriptorTable) + (n-1) * sizeof(FragmentDescriptor);
 }
 
+# if 0
 inline
 HTTPCacheAlt::FragmentAccessor::FragmentAccessor(HTTPCacheAlt* alt)
              : _alt(alt), _table(alt->m_fragments)
@@ -2117,12 +2105,6 @@ HTTPCacheAlt::FragmentAccessor::get_initial_cached_index() const
 {
   return _table ? _table->m_cached_idx : 0;
 }
+#endif
 
-inline bool
-HTTPCacheAlt::FragmentAccessor::is_frag_cached(unsigned int idx) const
-{
-  return (0 == idx && _alt->m_earliest.m_flag.cached_p) ||
-    (_table && idx < _table->m_n && (*_table)[idx].m_flag.cached_p)
-    ;
-}
 #endif /* __HTTP_H__ */

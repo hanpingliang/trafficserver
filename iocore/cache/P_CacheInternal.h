@@ -330,6 +330,7 @@ struct CacheVC: public CacheVConnection
   int updateVector(int event, Event *e);
   int updateReadDone(int event, Event *e);
   int updateVecWrite(int event, Event *e);
+  int updateWriteStateFromRange();
 
   int removeEvent(int event, Event *e);
 
