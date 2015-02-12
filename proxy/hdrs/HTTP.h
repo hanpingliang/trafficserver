@@ -1644,7 +1644,9 @@ struct HTTPCacheAlt
 
   /// # of fragments in the alternate, including the earliest fragment.
   /// This can be zero for a resident alternate.
-  /// @internal In practice this is really the high water mark for cached fragments.
+  /// @internal In practice this is the high water mark for cached fragments.
+  /// Contrast with the @a m_cached_idx in the fragment table - that marks the high
+  /// water of continguously cached fragments.
   uint32_t m_frag_count;
 
   /** The target size for fragments in this alternate.
@@ -2078,13 +2080,17 @@ HTTPRangeSpec::getConvexHull() const
 inline HTTPCacheAlt::FragmentDescriptor&
 HTTPCacheAlt::FragmentDescriptorTable::operator [] (int idx)
 {
+  ink_assert(idx > 0);
   return *(reinterpret_cast<FragmentDescriptor*>(reinterpret_cast<char*>(this+1) + sizeof(FragmentDescriptor)*(idx-1)));
 }
 
 inline size_t
 HTTPCacheAlt::FragmentDescriptorTable::calc_size(uint32_t n)
 {
-  return n <= 1 ? 0 : sizeof(FragmentDescriptorTable) + (n-1) * sizeof(FragmentDescriptor);
+  /* Get storage for @a n fragments. Because we store the earliest in the base structure, we only need
+     @a n - 1 entries in the table.
+  */
+  return n < 1 ? 0 : sizeof(FragmentDescriptorTable) + (n-1) * sizeof(FragmentDescriptor);
 }
 
 # if 0
@@ -2097,6 +2103,7 @@ HTTPCacheAlt::FragmentAccessor::FragmentAccessor(HTTPCacheAlt* alt)
 inline HTTPCacheAlt::FragmentDescriptor&
 HTTPCacheAlt::FragmentAccessor::operator [] (int idx)
 {
+  ink_assert(idx >= 0);
   return idx == 0 ? _alt->m_earliest : (*_table)[idx];
 }
 

@@ -1863,7 +1863,8 @@ HTTPInfo::marshal_length()
     len += m_alt->m_response_hdr.m_heap->marshal_length();
   }
 
-  len += FragmentDescriptorTable::calc_size(m_alt->m_frag_count);
+  if (m_alt->m_fragments)
+    len += FragmentDescriptorTable::calc_size(m_alt->m_fragments->m_n);
 
   return len;
 }
@@ -1876,7 +1877,7 @@ HTTPInfo::marshal(char *buf, int len)
   HTTPCacheAlt *marshal_alt = (HTTPCacheAlt *) buf;
   // non-zero only if the offsets are external. Otherwise they get
   // marshalled along with the alt struct.
-  size_t frag_len = FragmentDescriptorTable::calc_size(m_alt->m_frag_count);
+  size_t frag_len = m_alt->m_fragments ? FragmentDescriptorTable::calc_size(m_alt->m_fragments->m_n) : 0;
 
   ink_assert(m_alt->m_magic == CACHE_ALT_MAGIC_ALIVE);
 
@@ -1898,7 +1899,6 @@ HTTPInfo::marshal(char *buf, int len)
   if (frag_len > 0) {
     marshal_alt->m_fragments = static_cast<FragmentDescriptorTable*>(reinterpret_cast<void*>(used));
     memcpy(buf, m_alt->m_fragments, frag_len);
-    (reinterpret_cast<FragmentDescriptorTable*>(buf))->m_n = m_alt->m_frag_count - 1;
     buf += frag_len;
     used += frag_len;
   }
@@ -1957,6 +1957,7 @@ HTTPInfo::unmarshal(char *buf, int len, RefCountObj *block_ref)
 
   if (alt->m_fragments) {
     alt->m_fragments = reinterpret_cast<FragmentDescriptorTable*>(buf + reinterpret_cast<intptr_t>(alt->m_fragments));
+    len -= FragmentDescriptorTable::calc_size(alt->m_fragments->m_n);
   }
   alt->m_flag.table_allocated_p = false;
 
@@ -2129,14 +2130,15 @@ HTTPInfo::force_frag_at(unsigned int idx) {
 
     size_t size = FragmentDescriptorTable::calc_size(n);
     size_t old_size = 0;
-    unsigned int old_count = 1;
+    unsigned int old_count = 0;
     int64_t offset = 0;
     CryptoHash key;
 
     m_alt->m_fragments = static_cast<FragmentDescriptorTable*>(ats_malloc(size));
+    ink_zero(*(m_alt->m_fragments)); // just need to zero the base struct.
     if (old_table) {
       old_count = old_table->m_n;
-      frag = &((*old_table)[old_count - 1]);
+      frag = &((*old_table)[old_count]);
       offset = frag->m_offset;
       key = frag->m_key;
       old_size = FragmentDescriptorTable::calc_size(old_count);
@@ -2149,11 +2151,13 @@ HTTPInfo::force_frag_at(unsigned int idx) {
     m_alt->m_fragments->m_n = n;
     m_alt->m_flag.table_allocated_p = true;
     // fill out the new parts with offsets & keys.
-    for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count <= n ; ++old_count, ++frag ) {
+    ++old_count; // left as the index of the last frag in the previous set.
+    for ( frag = &((*m_alt->m_fragments)[old_count]) ; old_count < n ; ++old_count, ++frag ) {
       key.next();
       offset += ff_size;
       frag->m_key = key;
       frag->m_offset = offset;
+      frag->m_flags = 0;
     }
   }
   ink_assert(idx > m_alt->m_fragments->m_cached_idx);

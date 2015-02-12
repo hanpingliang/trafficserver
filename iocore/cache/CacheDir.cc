@@ -142,7 +142,7 @@ OpenDir::close_write(CacheVC *cont)
 //    delayed_readers.append(cont->od->readers);
     signal_readers(0, 0);
     cont->od->vector.clear();
-    cont->mutex = 0;
+    cont->od->mutex = 0;
     THREAD_FREE(cont->od, openDirEntryAllocator, cont->mutex->thread_holding);
   }
   cont->od = NULL;
