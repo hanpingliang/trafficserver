@@ -108,7 +108,7 @@ class CannedTwistedOrigin:
      
         reactor.listenTCP(port, Site(self.build_resource_tree(self.config['actions'])))
         try:
-          reactor.run()
+          reactor.run(installSignalHandlers=0)
         except:
           reactor.stop()
 

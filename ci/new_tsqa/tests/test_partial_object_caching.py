@@ -31,11 +31,6 @@ import tsqa.endpoint
 
 log = logging.getLogger(__name__)
 
-#TODO
-#rewrite origin as class again.
-#separate init from run
-#run in background thread
-
 class TestPartialObjectCachingHTTP(helpers.EnvironmentCase):
     @classmethod
     def setUpEnv(cls, env):
@@ -50,10 +45,6 @@ class TestPartialObjectCachingHTTP(helpers.EnvironmentCase):
         cls.__background_thread.setDaemon(True)
         cls.__background_thread.start()
         
-        #cls.origin_process.run() #run this in new thread
-        #cls.origin_process = subprocess.Popen([sys.executable, 'tests/canned_twisted_origin.py', 'origin1',
-        #  helpers.tests_file_path('partial_object_caching_origin.json')], shell=False, env=os.environ.copy(), bufsize=0,
-        #  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         cls.origin_port = cls.origin_process.get_port()
         cls.configs['remap.config'].add_line('map / http://127.0.0.1:{0}/\n'.format(cls.origin_port))
 
@@ -66,9 +57,6 @@ class TestPartialObjectCachingHTTP(helpers.EnvironmentCase):
         cls.configs['records.config']['CONFIG']['proxy.config.exec_thread.limit'] = 1
         cls.configs['records.config']['CONFIG']['proxy.config.exec_thread.autoconfig'] = 0
 
-    #def tearDown(cls):
-    #    cls.__background_thread.join()
-    
     def test_POC_1(self):
         '''
         Test 1 that the origin does in fact support partial object caching
