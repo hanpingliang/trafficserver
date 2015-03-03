@@ -4,3 +4,4 @@
 https://github.com/apache/trafficserver-qa/archive/master.zip
 pyyaml
 pyOpenSSL
+twisted
