@@ -12,12 +12,139 @@ import json
  
 # See http://twistedmatrix.com/documents/current/web/howto/web-in-60/index.html
 port = 80
- 
-class ChunkedResponseResource(Resource):
+
+class GeneratedPatternResource:
+    def parseRangeHeader(self, range):
+        try:
+            kind, value = range.split('=', 1)
+        except ValueError:
+            raise ValueError("Missing '=' separator")
+        kind = kind.strip()
+        if kind != 'bytes':
+            raise ValueError("Unsupported Bytes-Unit: %r" % (kind,))
+        parsedRanges = []
+        unparsedRanges = filter(None, map(str.strip, value.split(',')))
+        for byteRange in unparsedRanges:
+            try:
+                start, end = byteRange.split('-', 1)
+            except ValueError:
+                raise ValueError("Invalid Byte-Range: %r" % (byteRange,))
+            if start:
+                try:
+                    start = int(start)
+                except ValueError:
+                    raise ValueError("Invalid Byte-Range: %r" % (byteRange,))
+            else:
+                start = None
+            if end:
+                try:
+                    end = int(end)
+                except ValueError:
+                    raise ValueError("Invalid Byte-Range: %r" % (byteRange,))
+            else:
+                end = None
+            if start is not None:
+                if end is not None and start > end:
+                    # Start must be less than or equal to end or it is invalid.
+                    raise ValueError("Invalid Byte-Range: %r" % (byteRange,))
+            elif end is None:
+                # One or both of start and end must be specified.  Omitting
+                # both is invalid.
+                raise ValueError("Invalid Byte-Range: %r" % (byteRange,))
+            parsedRanges.append((start, end))
+
+        return parsedRanges[0] #right now we only support first range but can modify
+
+
+    def seven_digit_hex(self, n):
+        return "0x%s"%("0000000%x"%(n&0xfffffff))[-7:] 
+    
+    def generateBytes(self, start, end):
+        if end < 0 or start < 0 or start > end:
+            return 'invalid request, you get this string instead'
+        
+        #get start and end points for chunks in pattern
+        start_point = int(start / 8)
+        end_point = int(end / 8)
+
+        start_chunk = int(self.seven_digit_hex(start_point), 16)
+        end_chunk = int(self.seven_digit_hex(end_point), 16)
+
+        #construct string
+        temp_string = ''
+        for i in xrange(start_chunk, end_chunk + 1):
+            temp_string += self.seven_digit_hex(i)[2:]
+            temp_string += ' '
+
+        #return correct substring
+        return temp_string[(start % 8):((start % 8) + (end - start + 1))]
+
+class NonChunkedResponseResource(Resource, GeneratedPatternResource):
     def __init__(self, conf, method):
         self.__conf = conf
         self.__method = method
         self.isLeaf = 1
+        
+        if conf.has_key('status_code'):
+            self.__status_code = conf['status_code']
+        else:
+            self.__status_code = 200
+ 
+        if conf.has_key('headers'):
+            self.__headers = conf['headers']
+        else:
+            self.__headers = {}
+
+        if conf.has_key('content_length'):
+            self.__content_length = conf['content_length']
+        else:
+            self.__content_length = 1000
+
+        self.__body = self.generateBytes(0, self.__content_length - 1)
+
+        if not self.__headers.has_key('content-length'):
+            self.__headers['content-length'] = len(self.__body)
+     
+    
+    
+    def render(self, request):
+        for field_name, field_value in self.__headers.iteritems():
+            request.setHeader(bytes(field_name), bytes(field_value))
+ 
+        byteRange = request.getHeader('range')
+        if byteRange is None:
+            request.setResponseCode(self.__status_code)
+            request.write(self.__body)
+            return ""
+
+        #if we get here there's a range header
+        try:
+            start, end = self.parseRangeHeader(byteRange)
+            # validate start/end
+            if start < 0 or end > (self.__content_length - 1):
+                raise ValueError("requesting bytes outside content length")
+            else:
+                # have to update content length header
+                request.setHeader('content-length', bytes(str(end - start + 1)))
+                # return range request
+                request.setResponseCode(206)
+                request.length = end - start + 1
+                request.write(self.__body[start:(end + 1)])
+                return ""
+        except:
+            log.msg("ignoring malformed range header %r" % (byteRange,))
+            request.setResponseCode(self.__status_code)
+            request.write(self.__body)
+            return ""
+ 
+class ChunkedResponseResource(Resource, GeneratedPatternResource):
+    def __init__(self, conf, method):
+        self.__conf = conf
+        self.__method = method
+        self.isLeaf = 1
+        self.__patternedChunks = False
+        self.__range_start = 0
+        self.__range_end = sys.maxint
  
         if conf.has_key('status_code'):
             self.__status_code = conf['status_code']
@@ -43,21 +170,32 @@ class ChunkedResponseResource(Resource):
             self.__delay_between_chunk_sec = conf['delay_between_chunk_sec']
         else:
             self.__delay_between_chunk_sec = 0
- 
-        if conf.has_key('chunk_byte_value'):
-            chunk_byte_value = conf['chunk_byte_value']
-        else:
-            chunk_byte_value = 42
- 
+         
         if conf.has_key('chunk_size_bytes'):
-            chunk_size_bytes = conf['chunk_size_bytes']
+            self.__chunk_size_bytes = conf['chunk_size_bytes']
         else:
-            chunk_size_bytes = 1024
+            self.__chunk_size_bytes = 1024
  
-        self.__chunk = chr(chunk_byte_value) * chunk_size_bytes
+        if conf.has_key('patterned_chunks') and conf['patterned_chunks'] == 'true':
+            self.__patternedChunks = True
+        else:
+            if conf.has_key('chunk_byte_value'):
+                chunk_byte_value = conf['chunk_byte_value']
+            else:
+                chunk_byte_value = 42
+ 
+            self.__chunk = chr(chunk_byte_value) * self.__chunk_size_bytes
  
     def __send_chunk(self, request, chunks_left):
-        request.write(self.__chunk)
+        if self.__patternedChunks: #right now can only do range requests for patterned requests
+            first_byte = self.__chunk_size_bytes * (self.__chunks_to_send - chunks_left)
+            last_byte = first_byte + self.__chunk_size_bytes - 1
+            if last_byte < self.__range_start or first_byte > self.__range_end:
+                pass
+            else:
+                request.write(self.generateBytes(max(self.__range_start, first_byte), min(self.__range_end, last_byte)))
+        else:
+            request.write(self.__chunk)
  
         if 1 == chunks_left:
             request.finish()
@@ -77,8 +215,20 @@ class ChunkedResponseResource(Resource):
         for field_name, field_value in self.__headers.iteritems():
             request.setHeader(bytes(field_name), bytes(field_value))
  
-        request.setResponseCode(self.__status_code)
- 
+        
+        byteRange = request.getHeader('range')
+        if byteRange is not  None:
+            #if we get here there's a range header
+            try:
+                start, end = self.parseRangeHeader(byteRange)
+                self.__range_start = start
+                self.__range_end = end
+                request.setResponseCode(206)
+            except:
+                log.msg("ignoring malformed range header %r" % (byteRange,))
+        else:
+            request.setResponseCode(self.__status_code)
+       
         if 0 == chunks_left:
             return ""
  
@@ -152,11 +302,13 @@ class CannedTwistedOrigin:
      
                 if type == 'chunkedresponse':
                     child = ChunkedResponseResource(conf, method)
+                elif type == 'nonchunkedresponse':
+                    child = NonChunkedResponseResource(conf, method)
                 else:
                     raise Exception("conf for %s:%s has unknown type '%s'" % (method, abs_path, type))
      
                 parent.putChild(abs_path[length - 1], child)
-     
+
         return root
 
     def get_port(self):
